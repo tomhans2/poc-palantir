@@ -23,6 +23,11 @@
 - `/load` accepts `?sample=name` query param to load built-in samples from `backend/samples/{name}.json`
 - `GET /samples` lists available sample JSON files with name + description
 - Pydantic validation errors return HTTP 422 with `exc.errors()` detail (list of dicts with `loc`, `msg`, `type`)
+- ActionRegistry tracks source labels: `register(name, func, source="builtin")`, `register_from_module(module, source="builtin")`, `list_actions_with_source()` returns `[{name, source}]`
+- `load_workspace(schema, action_module, custom_action_module)`: builtin registered first, then custom overrides; same-name custom functions replace builtin
+- `/load` accepts optional `action_file` UploadFile for custom Python action files; also auto-loads convention-based `samples/<name>.py` when loading a sample
+- `registered_functions` in /load response is now `list[{name: str, source: str}]` (not `list[str]`)
+- Dynamic module loading: use `importlib.util.spec_from_file_location` + `module_from_spec` + `exec_module` to load .py files at runtime
 
 # Ralph Progress Log
 Started: 2026年 2月11日 星期三 22时17分10秒 CST
@@ -153,4 +158,28 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - `_check_unregistered_functions` runs AFTER `load_workspace` so the registry is populated before checking
   - Sample loading uses query params (`?sample=name`), not JSON body, to avoid conflict with multipart/form-data file upload
   - Full test suite: 110 tests (100 previous + 10 new), all passing
+---
+
+## 2026-02-11 - US-CORE-002
+- What was implemented: Custom Action function extension mechanism (user-injectable business functions)
+  - ActionRegistry now tracks source labels (`builtin` / `custom`) for each registered function
+  - `list_actions_with_source()` returns `[{name, source}]` for the /load response
+  - `OntologyEngine.load_workspace` accepts optional `custom_action_module` parameter; builtin registered first, custom overrides same-name functions
+  - `/load` endpoint accepts optional `action_file` UploadFile for custom Python action files
+  - Convention-based loading: when loading a sample (e.g. `corporate_acquisition`), auto-checks for `samples/corporate_acquisition.py` and loads it
+  - Dynamic module loading via `importlib.util.spec_from_file_location` + temp file for uploaded .py content
+  - `registered_functions` in /load response changed from `list[str]` to `list[{name: str, source: str}]`
+  - Security note: only scans `@register_action` decorated functions (POC stage)
+- Files changed:
+  - backend/app/engine/action_registry.py (added `_sources` dict, `source` param to register/register_from_module, `list_actions_with_source()`)
+  - backend/app/engine/graph_engine.py (added `custom_action_module` param to `load_workspace`)
+  - backend/app/api/routes.py (added `_load_module_from_path`, `_find_convention_action_file`, `action_file` param, convention-based loading, source-tracked response)
+  - backend/tests/test_action_registry.py (added 5 tests: source tracking, override, sorted, default)
+  - backend/tests/test_routes.py (updated existing test for new format, added 8 tests: custom upload, override, convention, signature, source format)
+- **Learnings for future iterations:**
+  - `importlib.util.spec_from_file_location` requires a real file path, so uploaded .py bytes must be written to a temp file first
+  - Convention-based .py files live alongside JSON in `samples/` directory with the same stem name
+  - Custom module is registered AFTER builtin module, so same-name functions get overridden (last-write-wins in dict)
+  - Tests that create convention files in `samples/` must clean up in a `finally` block to avoid polluting other tests
+  - Full test suite: 123 tests (110 previous + 13 new), all passing
 ---

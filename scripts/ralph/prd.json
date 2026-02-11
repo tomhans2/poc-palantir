@@ -167,7 +167,7 @@
         "验证: 自定义 .py 中的函数签名为 (ctx: ActionContext) -> ActionResult, 能被引擎正确调用并返回结果"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "此功能展示了系统的核心可扩展性: 引擎是纯调度器, 业务逻辑完全外置。不同领域的知识图谱可以携带自己的计算函数。"
     },
     {
