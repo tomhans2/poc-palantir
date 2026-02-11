@@ -417,7 +417,7 @@
         "在 Swagger UI (http://localhost:8000/docs) 中能直接调用所有 API 并看到正确响应"
       ],
       "priority": 20,
-      "passes": false,
+      "passes": true,
       "notes": ""
     }
   ]

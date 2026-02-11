@@ -5,6 +5,10 @@
 - Frontend API: `frontend/src/services/api.ts` — axios instance + functions: `loadWorkspace`, `simulate`, `resetWorkspace`, `getHistory`, `getSamples`
 - Frontend dependencies: react 19, antd 6, @antv/g6 5.x, axios, @ant-design/icons 6
 - Frontend state: `src/hooks/useWorkspace.ts` — WorkspaceContext + useReducer; access via `useWorkspace()` hook; `useSimulation()` wraps simulate API
+- E2E tests: `frontend/e2e/` with Playwright, config at `frontend/playwright.config.ts`, run with `npm run test:e2e` from `frontend/`
+- Playwright requires backend on port 8000 and frontend on port 5173 running before test execution
+- antd Select dropdown renders options in a popup appended to `document.body` (not inside the component tree); use `.ant-select-dropdown .ant-select-item-option` selector
+- antd Select `options` prop uses `label: description || name` — the visible option text is the description, not the value
 - Frontend components: `src/components/` — WorkspaceProvider wraps App in `main.tsx`
 - Frontend layout: `src/components/Layout/AppLayout.tsx` — three-column layout (280px left Sider + flex Content + 320px right Sider) with Header
 - Frontend component structure: ControlPanel (left), GraphCanvas (center), InsightFeed (right), FileUploader (Drawer overlay)
@@ -460,4 +464,40 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - CORS must include Docker frontend origin (port 3000) in addition to Vite dev server (5173)
   - `docker-compose.yml` uses `${VAR:-default}` syntax for .env variable substitution with defaults
   - Backend tests (174) all passing; frontend build (tsc + vite) successful
+---
+
+## 2026-02-12 - US-INT-001
+- What was implemented: Front-end/back-end full integration E2E verification using Playwright
+  - Set up Playwright test runner in frontend project (`@playwright/test`, Chromium headless)
+  - Created `frontend/playwright.config.ts` targeting port 5173 with headless Chromium
+  - Created `frontend/e2e/integration.spec.ts` with 14 comprehensive E2E tests covering all acceptance criteria:
+    - Three-column layout visibility (Header + left Sider + Content + right Sider)
+    - Load corporate_acquisition sample from UI dropdown (via antd Select in Drawer)
+    - Header displays sandbox description ("基于投资与收购事件的风险传导推演沙盘")
+    - ControlPanel shows "请点击节点查看详情" prompt before node selection
+    - ontology_def visual styles verified (Company blue circle, Event_Acquisition orange diamond, Person green circle)
+    - Simulate returns 3+ insight types with critical severity, no unfilled template placeholders
+    - Reset restores initial state (PENDING, valuation=10000000, risk_status=NORMAL), clears history
+    - Re-simulate after reset gives consistent results (same insight types, same ripple path)
+    - Swagger UI accessible at /docs
+    - GET /samples returns available samples list including corporate_acquisition
+    - Load response includes complete structure (metadata, ontology_def, graph_data, actions, registered_functions)
+    - Full browser UI flow: load → graph renders → legend shows all node types → insight placeholder visible
+    - Full API round-trip: load → simulate → check history → reset → verify cleared → re-simulate → consistency
+    - Backend health check returns ok
+  - Added `test:e2e` script to `frontend/package.json`
+  - Updated `.gitignore` to exclude `test-results/` and `playwright-report/`
+- Files changed:
+  - frontend/e2e/integration.spec.ts (new: 14 E2E tests, ~330 lines)
+  - frontend/playwright.config.ts (new: Playwright configuration)
+  - frontend/package.json (added @playwright/test dep + test:e2e script)
+  - frontend/package-lock.json (updated)
+  - .gitignore (added test-results/ and playwright-report/)
+- **Learnings for future iterations:**
+  - antd Select dropdown renders options in a portal on `document.body`, not within the Drawer — use `.ant-select-dropdown .ant-select-item-option` as selector
+  - antd Select `options` uses `label: description || name`, so the visible text is the Chinese description, not `corporate_acquisition`
+  - Playwright API-level tests (`request`) share the same backend state as browser tests — each API test should call `/load` to reset state before testing
+  - G6 canvas-based rendering cannot be tested via standard DOM selectors — use API-level verification for graph data integrity, browser-level tests for layout/panels
+  - `test.describe.configure({ mode: 'serial' })` ensures tests within a describe block run sequentially (important for shared backend state)
+  - Backend tests (174) all passing; frontend build (tsc + vite) successful; Playwright E2E (14) all passing
 ---
