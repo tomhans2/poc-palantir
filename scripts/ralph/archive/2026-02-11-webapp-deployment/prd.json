@@ -1,0 +1,499 @@
+{
+  "project": "pptmaker - 咨询PPT生成服务",
+  "branchName": "ralph/pptmaker-mcp-ppt",
+  "description": "基于 MCP + python-pptx 的 Agentic Workflow 咨询PPT报告生成服务。自建专用 MCP Server (11个Tool), 核心为 template_analyzer 双层识别引擎 (手工命名优先+自动推断兜底), 输出 TemplateConfig 供 LangGraph Agent 消费; AI Service (FastAPI + LangGraph) 实现 RAG 检索 + Brave Search 补充 + PPT 构建的完整工作流; 前端 (Next.js) 提供 Agent 对话 + Slide 编辑侧边栏 + 下载功能。Docker Compose 编排部署。",
+  "userStories": [
+    {
+      "id": "US-INFRA-001",
+      "title": "初始化 Monorepo 项目骨架",
+      "description": "搭建 pptmaker/ 三服务 Monorepo 结构, 配置 Docker Compose 编排和 .env 环境变量体系",
+      "acceptanceCriteria": [
+        "创建 mcp-ppt-server/, ai-service/, frontend/ 三个服务目录",
+        "mcp-ppt-server/pyproject.toml 声明依赖: python-pptx>=1.0.0, mcp[cli]>=1.8.0, Pillow>=8.0.0",
+        "ai-service/pyproject.toml 声明依赖: fastapi, langgraph, langchain-openai, llama-index, pydantic-settings, httpx, sse-starlette",
+        "frontend/package.json 声明依赖: next, tailwindcss, @shadcn/ui",
+        "docker-compose.yml 定义 mcp-ppt-server, ai-service, frontend 三个 service",
+        "docker-compose.yml 中 mcp-ppt-server 和 ai-service 共享 ppt-output volume",
+        ".env.example 包含所有 API Key 模板 (LLM_BASE_URL, LLM_API_KEY, LLM_MODEL, LLM_MODEL_FAST, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_DB_URL, LLAMA_CLOUD_API_KEY, BRAVE_SEARCH_API_KEY, MCP_PPT_SERVER_URL)",
+        "mcp-ppt-server/Dockerfile 基于 python:3.12-slim, 能 docker build 成功",
+        "ai-service/Dockerfile 基于 python:3.12-slim, 能 docker build 成功"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-MCP-001",
+      "title": "MCP Server 主入口与状态管理",
+      "description": "搭建 MCP Server 的 FastMCP 主入口, 支持 stdio/http 双传输模式, 实现演示文稿内存状态管理",
+      "acceptanceCriteria": [
+        "mcp-ppt-server/server.py 使用 FastMCP 框架初始化, name='consulting-ppt-server'",
+        "支持 argparse 参数: -t stdio/http, -p 端口号 (默认 8000)",
+        "mcp-ppt-server/state.py 实现 presentations dict 存储演示文稿对象",
+        "state.py 实现 template_configs dict 缓存 TemplateConfig (同一模板不重复解析)",
+        "state.py 提供 get_presentation(id), store_presentation(pres, id), get_template_config(name), cache_template_config(name, config) 方法",
+        "运行 python server.py -t http -p 8000 后可访问 MCP Server",
+        "运行 python server.py (默认 stdio) 正常启动无报错"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "参考 Office-PowerPoint-MCP-Server 的 FastMCP + presentations dict 模式"
+    },
+    {
+      "id": "US-MCP-002",
+      "title": "模板深度解析引擎 (template_analyzer.py)",
+      "description": "实现双层识别引擎, 扫描任意 PPT 模板的 Slide Master, 输出完整 TemplateConfig JSON",
+      "acceptanceCriteria": [
+        "engine/template_analyzer.py 实现 analyze_template(template_path) -> dict 函数",
+        "优先级1-语义化命名: 识别 TXT_*, CHART_*, TABLE_*, IMG_* 前缀的 shape, 输出 source='named'",
+        "优先级2-占位符类型推断: 通过 PP_PLACEHOLDER_TYPE 识别 TITLE/BODY/CHART/TABLE 等, 输出 source='inferred'",
+        "优先级3-位置推断: 对非 placeholder 的 chart/table shape 自动发现, 输出 source='inferred'",
+        "TemplateConfig 包含 theme (color_scheme, fonts), layouts 列表",
+        "每个 layout 包含 name, index, fields 列表",
+        "每个 field 包含 field_id, source, type, semantic_role, position (left/top/width/height inches), hint",
+        "文本类 field 额外包含 font (name, size_pt, bold, color)",
+        "图表类 field 额外包含 chart_type, current_series_count",
+        "验证: 用一个标准未命名 PowerPoint 模板测试, TITLE 被识别为 action_title, BODY 被识别为 body_text",
+        "验证: 用一个手工命名模板 (TXT_ActionTitle 等) 测试, 所有 named field 正确输出 source='named'"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "这是整个系统的核心模块, 必须最先完成"
+    },
+    {
+      "id": "US-MCP-003",
+      "title": "智能 Shape 查找引擎 (shape_finder.py)",
+      "description": "实现按 field_id 在幻灯片上精确定位 shape, 兼容语义化命名和自动生成的 ID",
+      "acceptanceCriteria": [
+        "engine/shape_finder.py 实现 find_shape(slide, field_id) 函数",
+        "精确名称匹配: field_id='TXT_ActionTitle' 匹配 shape.name='TXT_ActionTitle'",
+        "auto_id 匹配: field_id='auto_title_0' 按 placeholder_idx=0 匹配",
+        "auto_chart 匹配: field_id='auto_chart_123' 按 shape_id=123 匹配",
+        "找不到时抛出 ValueError, 错误信息包含当前 slide 上所有可用的 shape 名称列表",
+        "验证: 创建一个测试 PPT, 用 find_shape 成功定位手工命名和自动命名的 shape"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-MCP-004",
+      "title": "文本填充引擎 - 样式快照与还原 (text_formatter.py)",
+      "description": "实现文本填充时完整保留模板原有的字体/颜色/大小/段落格式",
+      "acceptanceCriteria": [
+        "engine/text_formatter.py 实现 fill_text_preserve_style(shape, text, bullet_points=None) 函数",
+        "_snapshot_paragraph_styles(tf) 快照每个 paragraph 的 alignment, level, space_before, font (name, size, bold, italic, color_rgb)",
+        "填充纯文本时: 清除 text_frame 内容, 写入新文本, 还原第一个段落的字体样式",
+        "填充 bullet_points 列表时: 每条 bullet 一个 paragraph, 还原对应段落样式 (如不够则复用最后一个快照)",
+        "验证: 用一个模板中 Calibri Light 22pt Bold 蓝色的标题占位符填入新文本, 检查输出 PPT 中字体仍为 Calibri Light 22pt Bold 蓝色",
+        "验证: 用一个带 3 级 bullet 的正文占位符填入 5 条 bullet_points, 检查每条的缩进级别和字体正确"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "这是最关键的技术难点, 决定了生成 PPT 是否保持模板品质"
+    },
+    {
+      "id": "US-MCP-005",
+      "title": "图表数据注入引擎 (chart_builder.py)",
+      "description": "实现图表数据替换, 保留图表类型和视觉样式, 包含瀑布图 stacked bar 模拟",
+      "acceptanceCriteria": [
+        "engine/chart_builder.py 实现 replace_chart_data(chart_shape, categories, series) 函数",
+        "使用 python-pptx 的 CategoryChartData 替换图表数据, 不改变 chart_type",
+        "series 参数格式: [{\"name\": \"2024\", \"values\": [100, 120]}]",
+        "实现 build_waterfall_series(items) 函数: 输入 [{\"name\": str, \"value\": float, \"is_total\": bool}]",
+        "瀑布图输出 3 个 series: invisible_base (透明), increase (正值), decrease (负值)",
+        "is_total=true 的项目从 0 开始, 不累加",
+        "验证: 用一个含 Column Chart 的 PPT 替换数据后, 图表显示新数据且样式不变",
+        "验证: build_waterfall_series([{name:'起点',value:100,is_total:true},{name:'增加',value:20},{name:'减少',value:-10},{name:'终点',value:110,is_total:true}]) 输出正确的 3 个 series"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-MCP-006",
+      "title": "模板管理 Tools (template_tools.py)",
+      "description": "实现 list_templates, analyze_template, get_layout_fields 三个 MCP Tool",
+      "acceptanceCriteria": [
+        "list_templates() 扫描 templates/ 目录, 返回 {templates: [{name, file, layouts: [layout_name], description}]}",
+        "analyze_template(template) 调用 engine/template_analyzer.py, 返回完整 TemplateConfig JSON",
+        "analyze_template 结果缓存到 state.template_configs, 同一模板第二次调用直接返回缓存",
+        "get_layout_fields(template, layout) 返回指定布局的 fields 列表 (TemplateConfig 的子集)",
+        "layout 参数支持名称 (如 'Chart_Right') 或索引 (如 3)",
+        "模板不存在时返回清晰的错误信息",
+        "验证: 在 templates/ 放入测试 PPT, 调用 list_templates 返回包含该模板",
+        "验证: 调用 analyze_template 返回的 JSON 结构符合 TemplateConfig 定义"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-MCP-007",
+      "title": "演示文稿生命周期 Tools (presentation_tools.py)",
+      "description": "实现 create_presentation, add_slide, save_presentation 三个 MCP Tool",
+      "acceptanceCriteria": [
+        "create_presentation(template) 基于模板复制创建新演示文稿, 清除示例 slide, 返回 {presentation_id, template, available_layouts}",
+        "add_slide(presentation_id, layout) 添加指定布局的幻灯片到末尾, 返回 {slide_index, layout, fields_to_fill}",
+        "layout 参数支持名称或索引",
+        "save_presentation(presentation_id, filename) 保存到 output/ 目录, 返回 {file_path, total_slides, file_size_kb}",
+        "presentation_id 不存在时返回清晰的错误信息",
+        "验证: create -> add_slide -> save 完整流程, 输出的 .pptx 文件可用 PowerPoint 正常打开"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-MCP-008",
+      "title": "内容填充 Tools (content_tools.py)",
+      "description": "实现 fill_text, fill_chart, fill_table, fill_slide_batch 四个 MCP Tool",
+      "acceptanceCriteria": [
+        "fill_text(presentation_id, slide_index, shape_name, text, bullet_points) 填充文本, 保留模板样式",
+        "fill_chart(presentation_id, slide_index, shape_name, categories, series, chart_title) 填充图表数据",
+        "fill_table(presentation_id, slide_index, shape_name, headers, rows) 填充表格, 动态调整行数",
+        "fill_slide_batch(presentation_id, slide_index, fills) 一次性填充整页所有 shape",
+        "fills 参数格式: {\"TXT_ActionTitle\": {\"type\": \"text\", \"text\": \"...\"}, \"CHART_Main\": {\"type\": \"chart\", \"categories\": [...], \"series\": [...]}}",
+        "fill_slide_batch 返回 {filled: [...], skipped: [...], errors: [...]}",
+        "shape_name 找不到时返回清晰的错误信息 (通过 shape_finder)",
+        "验证: fill_text 填入文本后打开 PPT 确认样式保留",
+        "验证: fill_chart 填入数据后图表显示正确",
+        "验证: fill_slide_batch 一次填充 5 个 shape 全部成功"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "fill_slide_batch 是关键优化, 减少 MCP 调用次数"
+    },
+    {
+      "id": "US-MCP-009",
+      "title": "审查回读 Tools (review_tools.py)",
+      "description": "实现 get_slide_content 和 validate_slide 两个 MCP Tool",
+      "acceptanceCriteria": [
+        "get_slide_content(presentation_id, slide_index) 回读 slide 上所有语义化 shape 的内容",
+        "返回 {slide_index, layout, shapes: {shape_name: {type, content/has_data}}, empty_required_fields: [...]}",
+        "validate_slide(presentation_id, slide_index) 执行 MBB 质量校验",
+        "检查 GHOSTING: 图表存在但缺少数据",
+        "检查 EMPTY_REQUIRED: 必填字段为空 (TXT_Source 等)",
+        "检查 CLUTTER: body_sections 超过 4 个时警告",
+        "返回 {valid: bool, issues: [{type, shape, detail}]}",
+        "验证: 填充一页后调用 get_slide_content, 返回的内容与填入的一致",
+        "验证: 故意留空 TXT_Source, validate_slide 返回 EMPTY_REQUIRED 问题"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-MCP-010",
+      "title": "MCP Server 端到端集成验证",
+      "description": "全流程测试: analyze_template -> create -> add_slide -> fill_slide_batch -> validate -> save",
+      "acceptanceCriteria": [
+        "在 templates/ 目录准备一个测试模板 (至少含 2 个布局)",
+        "用 MCP Inspector 或 Python 脚本完成完整流程",
+        "流程: analyze_template -> create_presentation -> add_slide(Cover) -> fill_slide_batch(封面数据) -> add_slide(Chart_Right) -> fill_slide_batch(图表数据) -> validate_slide -> save_presentation",
+        "输出的 .pptx 文件可用 PowerPoint 打开, 视觉效果保持模板品质",
+        "MCP Server 在 Docker HTTP 模式下 (docker-compose up mcp-ppt-server) 可正常工作",
+        "所有 11 个 Tool 在 HTTP 模式下可调用"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "Phase 1 的最终验收标准"
+    },
+    {
+      "id": "US-TPL-001",
+      "title": "MBB 咨询模板制作与命名规范",
+      "description": "制作 MBB_Blue.pptx 咨询模板, 在 Slide Master 中按命名规范重命名所有占位符",
+      "acceptanceCriteria": [
+        "MBB_Blue.pptx 模板包含至少 4 个布局: Cover, Executive_Summary, Chart_Right, Waterfall_Full",
+        "Cover 布局含: TXT_Title, TXT_Subtitle, TXT_Date, IMG_Logo",
+        "Executive_Summary 布局含: TXT_Kicker, TXT_ActionTitle, TXT_Body, TXT_Source",
+        "Chart_Right 布局含: TXT_Kicker, TXT_ActionTitle, TXT_BodyLeft, CHART_Main, TXT_Source",
+        "Waterfall_Full 布局含: TXT_Kicker, TXT_ActionTitle, CHART_Waterfall, TXT_Source",
+        "所有占位符在选择窗格中已重命名 (非默认的 '标题 1' 等)",
+        "naming_convention.md 文档记录完整的命名规范和操作指南",
+        "验证: analyze_template('MBB_Blue') 返回的所有 field 的 source 均为 'named'"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "这是手工操作任务, 需要在 PowerPoint 中编辑 Slide Master"
+    },
+    {
+      "id": "US-AI-001",
+      "title": "AI Service 配置管理与 Provider 适配层",
+      "description": "实现 Pydantic Settings 统一配置 + NewAPI/Brave/Supabase/MCP Client 四个 Provider",
+      "acceptanceCriteria": [
+        "app/config.py 使用 pydantic-settings 定义 Settings 类, 从 .env 加载所有配置",
+        "Settings 包含: llm_base_url, llm_api_key, llm_model, llm_model_fast, supabase_url, supabase_service_role_key, supabase_db_url, llama_cloud_api_key, brave_search_api_key, mcp_ppt_server_url",
+        "providers/llm.py 使用 ChatOpenAI(base_url=NewAPI地址) 创建 LLM 客户端",
+        "providers/llm.py 提供 get_llm(fast=False) 函数, fast=True 使用 llm_model_fast",
+        "providers/brave_search.py 实现 brave_web_search(query) 函数, 调用 Brave Search API",
+        "providers/supabase_client.py 初始化 Supabase 客户端",
+        "providers/mcp_client.py 实现 MCPPPTClient 类, 通过 HTTP 连接 MCP PPT Server",
+        "MCPPPTClient 提供 connect(), call_tool(name, **kwargs), list_tools() 方法",
+        "验证: get_llm() 能调通 NewAPI 返回响应",
+        "验证: MCPPPTClient 能连接 MCP Server 并调用 list_templates"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-AI-002",
+      "title": "RAG 管线: PDF 解析与向量存储",
+      "description": "使用 LlamaParse 解析 PDF (含复杂表格), 存入 Supabase Vector Store",
+      "acceptanceCriteria": [
+        "app/rag/parser.py 使用 LlamaParse 解析 PDF, result_type='markdown', 保留表格结构",
+        "app/rag/indexer.py 将解析后的 chunks 存入 Supabase Vector Store (使用 llama-index-vector-stores-supabase)",
+        "app/rag/retriever.py 实现混合检索 (BM25 + Vector), 支持文本和表格数据检索",
+        "Supabase 执行 001_enable_pgvector.sql 开启 pgvector 扩展",
+        "验证: 上传一个含表格的 PDF, 问'2025年净利润是多少', 能从表格中准确提取数字"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": "需要 Supabase Cloud 和 LlamaCloud API Key 已配置"
+    },
+    {
+      "id": "US-AI-003",
+      "title": "LangGraph 工作流: PlannerNode",
+      "description": "实现规划节点, 调用 MCP analyze_template 获取 TemplateConfig, 规划报告结构",
+      "acceptanceCriteria": [
+        "graph/state.py 定义 GraphState TypedDict, 包含: prompt, template_config, slide_plans, current_slide_idx, retry_count, thinking_logs, output_path",
+        "graph/nodes/planner.py 实现 planner_node(state) 函数",
+        "PlannerNode 调用 MCP analyze_template 获取完整 TemplateConfig",
+        "PlannerNode 使用 LLM 分析用户 prompt, 输出 slide_plans 列表",
+        "每个 slide_plan 包含: layout (布局名), field_fills (每个 field_id 需要填什么内容的描述), data_requirements (需要 RAG 检索的数据描述)",
+        "PlannerNode 将 TemplateConfig 中的 fields 信息 (type, hint, max_chars) 传给 LLM, 使其精准匹配模板结构",
+        "验证: 输入'帮我生成一份青岛银行分析报告', PlannerNode 输出 3-5 页的 slide_plans"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-AI-004",
+      "title": "LangGraph 工作流: RetrieverNode + WebSearcherNode",
+      "description": "实现 RAG 检索节点和 Brave Search 补充检索节点",
+      "acceptanceCriteria": [
+        "graph/nodes/retriever.py 针对每页 slide_plan 的 data_requirements, 调用 rag/retriever.py 检索",
+        "检索结果存入 state['retrieved_data'][slide_index]",
+        "graph/nodes/web_searcher.py 使用 Brave Search API 补充 RAG 无法覆盖的实时/外部信息",
+        "WebSearcherNode 可由 ValidatorNode 条件触发 (事实存疑时回退)",
+        "搜索结果存入 state['web_search_data'][slide_index]",
+        "验证: RetrieverNode 对'非息收入'检索到相关财报数据",
+        "验证: WebSearcherNode 对'2025年银行业趋势'返回最新搜索结果"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-AI-005",
+      "title": "LangGraph 工作流: SynthesizerNode",
+      "description": "根据 TemplateConfig 和检索数据, 通过 NewAPI 生成每页填充内容",
+      "acceptanceCriteria": [
+        "graph/nodes/synthesizer.py 实现 synthesizer_node(state) 函数",
+        "对每页 slide_plan, 根据 TemplateConfig 中 field 的 type/hint/max_chars 生成精准匹配的填充内容",
+        "文本类 field: 生成符合 MBB 标准的 Action Title (带观点的完整句子)",
+        "图表类 field: 将检索数据转换为 {categories, series} 格式",
+        "表格类 field: 将检索数据转换为 {headers, rows} 格式",
+        "输出格式与 fill_slide_batch 的 fills 参数完全匹配",
+        "验证: SynthesizerNode 为 Chart_Right 布局生成的 fills 包含 TXT_ActionTitle (文本) + CHART_Main (图表数据) + TXT_Source (来源)"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-AI-006",
+      "title": "LangGraph 工作流: PPTBuilderNode",
+      "description": "调用 MCP Tools 构建完整 PPT",
+      "acceptanceCriteria": [
+        "graph/nodes/ppt_builder.py 实现 ppt_builder_node(state) 函数",
+        "调用 create_presentation(template) 创建演示文稿",
+        "遍历 slide_plans, 对每页调用 add_slide(layout) + fill_slide_batch(fills)",
+        "每页生成时向 state['thinking_logs'] 追加进度信息 ('正在生成第 N 页: 布局名')",
+        "调用 save_presentation(filename) 保存文件",
+        "state['output_path'] 设置为保存后的文件路径",
+        "验证: PPTBuilderNode 成功生成包含多页的 .pptx 文件"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-AI-007",
+      "title": "LangGraph 工作流: ValidatorNode + 条件回退",
+      "description": "实现 MBB QC 校验节点, 支持数据缺失回退到 RetrieverNode, 事实存疑回退到 WebSearcherNode",
+      "acceptanceCriteria": [
+        "graph/nodes/validator.py 实现 validator_node(state) 函数",
+        "对每页调用 MCP validate_slide + get_slide_content 做质量检查",
+        "发现 EMPTY_REQUIRED 问题: 回退到 RetrieverNode (retry_count < 3)",
+        "发现 GHOSTING 问题: 回退到 RetrieverNode",
+        "发现事实存疑 (可选): 回退到 WebSearcherNode",
+        "retry_count >= 3 时进入 FallbackNode, 标记问题后降级保存",
+        "graph/workflow.py 编译完整 Graph, 包含所有条件边",
+        "验证: 故意制造数据缺失场景, ValidatorNode 触发回退重试"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-AI-008",
+      "title": "FastAPI SSE 流式接口",
+      "description": "实现 POST /generate-report SSE endpoint, 流式推送 Agent 思考过程和结果",
+      "acceptanceCriteria": [
+        "app/main.py 配置 FastAPI 应用, 包含 CORS, health check",
+        "api/routes/generate.py 实现 POST /generate-report endpoint",
+        "请求体包含: prompt (str), template (str, 可选)",
+        "使用 StreamingResponse + text/event-stream 流式响应",
+        "SSE 事件类型: thinking (思考步骤), slide (每页完成), done (全部完成), error (错误)",
+        "thinking 事件: {\"type\": \"thinking\", \"data\": {\"step\": \"planner\", \"message\": \"正在分析...\"}}",
+        "done 事件: {\"type\": \"done\", \"data\": {\"file_path\": \"...\", \"total_slides\": 5}}",
+        "api/routes/downloads.py 实现 GET /downloads/{filename} 文件下载",
+        "验证: curl POST /generate-report 能收到 SSE 流式事件",
+        "验证: GET /downloads/xxx.pptx 能下载生成的文件"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-AI-009",
+      "title": "AI Service 端到端验证",
+      "description": "完整流程: 一句 prompt -> LangGraph 6 节点工作流 -> 输出可下载 .pptx 文件",
+      "acceptanceCriteria": [
+        "docker-compose up ai-service mcp-ppt-server 启动两个服务",
+        "POST /generate-report {\"prompt\": \"帮我用青岛银行财报生成一份分析PPT\"} 成功触发工作流",
+        "SSE 流中能看到 thinking 事件 (正在分析/正在检索/正在生成)",
+        "SSE 流最终返回 done 事件, 包含 file_path",
+        "GET /downloads/{filename} 能下载 .pptx 文件",
+        "下载的 .pptx 用 PowerPoint 打开, 包含多页有内容的幻灯片",
+        "生成的 PPT 保持模板的视觉品质 (字体/颜色/布局不丢失)"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": "Phase 2 的最终验收标准"
+    },
+    {
+      "id": "US-DB-001",
+      "title": "Supabase 数据库迁移与表结构",
+      "description": "执行 Supabase 数据库迁移, 创建文档/报告/会话/API配置表",
+      "acceptanceCriteria": [
+        "001_enable_pgvector.sql: CREATE EXTENSION IF NOT EXISTS vector",
+        "002_create_documents.sql: documents 表 (id, filename, storage_path, parsed_status, created_at)",
+        "003_create_reports.sql: reports 表 (id, session_id, prompt, slides_json, file_path, created_at)",
+        "004_create_sessions.sql: sessions 表 (id, title, created_at)",
+        "005_create_api_settings.sql: api_settings 表 (id, key, value, is_secret, updated_at)",
+        "所有迁移在 Supabase Cloud SQL Editor 中执行成功",
+        "验证: 能向 documents 表插入和查询数据"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-001",
+      "title": "前端项目初始化与 Split View 布局",
+      "description": "初始化 Next.js 14 项目, 实现左侧 30% 侧边栏 + 右侧 70% 对话区布局",
+      "acceptanceCriteria": [
+        "使用 Next.js 14 App Router 初始化项目",
+        "安装 Tailwind CSS + Shadcn/ui (new-york 样式)",
+        "app/page.tsx 实现 Split View: 左侧 30% sidebar + 右侧 70% chat panel",
+        "左侧区域包含 SlideList 区域 (顶部) + SlideEditor 区域 (中部) + DownloadBar 区域 (底部)",
+        "右侧区域包含消息列表 + 输入框",
+        "支持响应式: 移动端可折叠侧边栏",
+        "验证: npm run dev 能正常访问, 布局结构正确"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-002",
+      "title": "ChatPanel + ThinkingStream 对话界面",
+      "description": "实现 Agent 对话界面, 通过 SSE 流式展示思考过程和最终结果",
+      "acceptanceCriteria": [
+        "components/chat/ChatPanel.tsx 包含消息列表 + 输入框",
+        "components/chat/ThinkingStream.tsx 渲染 thinking 事件 (步骤名 + 消息)",
+        "hooks/useSSE.ts 封装 SSE 连接: POST /generate-report, 解析 data: 事件",
+        "thinking 事件实时追加到 ThinkingStream (如: '> 正在从财报检索非息收入数据...')",
+        "done 事件触发左侧 SlideList 更新和 DownloadBar 显示",
+        "error 事件显示错误提示",
+        "输入框按 Enter 发送消息, 发送后禁用直到 done/error",
+        "验证: 输入 prompt 后, 右侧实时显示思考步骤, 最终显示生成完成消息"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-003",
+      "title": "SlideList + SlideEditor 侧边栏",
+      "description": "左侧侧边栏展示 Slide 列表, 选中后展示可编辑字段",
+      "acceptanceCriteria": [
+        "components/sidebar/SlideList.tsx 展示已生成 PPT 的页面列表 (序号 + 布局名 + Action Title 摘要)",
+        "列表数据来源: 调用后端 API 获取 get_slide_content 结果",
+        "点击某页高亮选中, 下方 SlideEditor 展示该页内容",
+        "components/sidebar/SlideEditor.tsx 根据 TemplateConfig 的 fields 动态生成编辑表单",
+        "每个 text 类型 field 渲染为 Input 或 Textarea",
+        "修改后点击'保存修改'按钮, 调用后端 API -> MCP fill_text/fill_chart 更新",
+        "保存成功后显示 toast 提示",
+        "验证: 生成 PPT 后, 侧边栏显示页面列表, 点击某页能编辑并保存修改"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-004",
+      "title": "DownloadBar 下载功能",
+      "description": "实现 PPT 文件下载按钮",
+      "acceptanceCriteria": [
+        "components/sidebar/DownloadBar.tsx 显示下载按钮 (生成完成前禁用)",
+        "PPT 生成完成后 (done 事件), 按钮激活",
+        "点击按钮调用 GET /downloads/{filename}, 触发浏览器文件下载",
+        "下载的文件名为报告标题 + .pptx",
+        "验证: 生成完成后点击下载, 浏览器下载 .pptx 文件"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-005",
+      "title": "Settings API 配置页面",
+      "description": "实现 /settings 页面, 管理 API 配置 (NewAPI/Brave/Supabase/LlamaParse)",
+      "acceptanceCriteria": [
+        "app/settings/page.tsx 提供表单界面",
+        "表单字段: LLM Base URL, LLM API Key, LLM Model, Brave Search API Key, Supabase URL, Supabase Key, LlamaParse API Key",
+        "API Key 类字段显示为密码输入 (不回显明文)",
+        "保存时调用 PUT /api/settings 写入 Supabase api_settings 表",
+        "加载时调用 GET /api/settings 读取已保存的配置",
+        "保存成功显示 toast 提示",
+        "验证: 保存配置后刷新页面, 非敏感字段值保留"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-006",
+      "title": "前端全链路集成测试",
+      "description": "docker-compose up 启动全部三个服务, 完成从输入到下载的完整流程",
+      "acceptanceCriteria": [
+        "docker-compose up 成功启动 mcp-ppt-server, ai-service, frontend 三个服务",
+        "浏览器访问 http://localhost:3000 看到 Split View 界面",
+        "在对话框输入 prompt, 右侧实时显示思考步骤",
+        "生成完成后左侧显示 Slide 列表",
+        "点击某页能查看和编辑内容",
+        "点击下载按钮能下载 .pptx 文件",
+        "下载的 PPT 用 PowerPoint 打开, 内容和样式正确",
+        "Settings 页面能保存和读取 API 配置"
+      ],
+      "priority": 28,
+      "passes": false,
+      "notes": "Phase 3 的最终验收标准, 也是整个项目的 MVP 验收"
+    }
+  ]
+}

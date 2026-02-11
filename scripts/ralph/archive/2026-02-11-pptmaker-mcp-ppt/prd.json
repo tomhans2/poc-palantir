@@ -1,0 +1,424 @@
+{
+  "project": "动态图谱洞察沙盘 POC (Palantir Ontology Simulator)",
+  "branchName": "ralph/palantir-poc",
+  "description": "模拟 Palantir 核心理念的动态业务推演沙盘。上传 JSON 知识图谱文件，后端 OntologyEngine (FastAPI + NetworkX + Pydantic) 解析图拓扑并通过可注入的 Python Action 函数执行涟漪推演，前端 (React + AntV G6 + Ant Design) 自适应渲染三栏布局（控制台 + 图谱画布 + 情报叙事流），支持 What-If 模拟与结构化多类型智能洞察输出。系统完全领域无关——切换 JSON 即可切换业务沙盘。",
+  "userStories": [
+    {
+      "id": "US-BE-001",
+      "title": "后端项目初始化与 Pydantic 数据模型",
+      "description": "作为开发者，我需要搭建 FastAPI 后端项目骨架并定义严格的 Pydantic 数据模型，使 JSON 契约协议能被正确解析和校验。",
+      "acceptanceCriteria": [
+        "创建 backend/ 目录结构: app/__init__.py, app/main.py, app/models/, app/engine/, app/actions/, app/api/",
+        "requirements.txt 包含: fastapi, uvicorn[standard], pydantic>=2.0, networkx, python-multipart",
+        "app/main.py 配置 FastAPI 应用, 包含 CORS (允许 localhost:5173), 健康检查 GET /health 返回 {status: 'ok'}",
+        "models/ontology.py: NodeTypeDef(label, color, shape, icon, properties), EdgeTypeDef(label, color, style, properties), OntologyDef(node_types: dict[str, NodeTypeDef], edge_types: dict[str, EdgeTypeDef])",
+        "models/graph.py: GraphNode(id, type, properties: dict[str, Any]), GraphEdge(source, target, type, properties), GraphData(nodes, edges)",
+        "models/action.py: DirectEffect(property_to_update, new_value), EffectOnTarget(action_to_trigger, parameters), RippleRule(rule_id, propagation_path, condition, effect_on_target, insight_template), Action(action_id, target_node_type, display_name, direct_effect, ripple_rules), ActionEngine(actions)",
+        "models/workspace.py: Metadata(domain, version, description), WorkspaceConfig(metadata, ontology_def, graph_data, action_engine)",
+        "models/api.py: SimulateRequest(action_id, node_id), InsightItem(text, type, severity, source_node, target_node, rule_id), DeltaGraph(updated_nodes, highlight_edges), SimulateResponse(status, delta_graph, ripple_path, insights: list[InsightItem])",
+        "验证: 用示例 JSON 数据创建 WorkspaceConfig 实例, Pydantic 校验通过无报错",
+        "验证: uvicorn app.main:app 启动成功, GET /health 返回 200"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-BE-002",
+      "title": "ActionRegistry 函数注册表与 @register_action 装饰器",
+      "description": "作为开发者，我需要实现 Action 函数注入机制，使引擎能按名称查找并调用外部 Python 函数，实现业务逻辑与引擎的完全解耦。",
+      "acceptanceCriteria": [
+        "engine/action_registry.py 定义 ActionContext 数据类: target_node(dict), source_node(dict), target_id(str), source_id(str), params(dict), graph(nx.DiGraph)",
+        "engine/action_registry.py 定义 ActionResult 数据类: updated_properties(dict), old_values(dict)",
+        "实现 @register_action 装饰器, 标记 func._is_action = True 和 func._action_name = func.__name__",
+        "ActionRegistry 类实现 register(name, func), register_from_module(module), get(name), list_actions() 四个方法",
+        "register_from_module 扫描模块中所有带 _is_action 属性的 callable 并自动注册",
+        "验证: 创建一个带 @register_action 的测试函数, 通过 register_from_module 注册后, get(name) 能正确返回该函数",
+        "验证: list_actions() 返回所有已注册函数名列表",
+        "验证: get() 对未注册名称返回 None"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-BE-003",
+      "title": "Action 函数库 (三层智能函数实现)",
+      "description": "作为开发者，我需要在 action_functions.py 中实现覆盖 L1/L2/L3 三层智能的 Python 函数，展示 Palantir 从数据到智能的核心思想。",
+      "acceptanceCriteria": [
+        "actions/action_functions.py 所有函数签名统一为 (ctx: ActionContext) -> ActionResult",
+        "L1 数据层: 实现 set_property(ctx) — 将 ctx.params['property'] 设为 ctx.params['value'], 返回旧值",
+        "L1 数据层: 实现 adjust_numeric(ctx) — 将数值属性乘以 ctx.params['factor'], 返回旧值",
+        "L2 信息层: 实现 recalculate_valuation(ctx) — 计算 old_val * (1 + shock_factor), 返回新旧估值",
+        "L2 信息层: 实现 compute_margin_gap(ctx) — 计算 loan_amount * (1 - collateral_ratio * (1 + stock_change)), 返回保证金缺口",
+        "L3 智能层: 实现 graph_weighted_exposure(ctx) — 沿图拓扑按 direction/edge_type 遍历, 计算 Σ(neighbor_value × edge_weight), 支持 sum/max/count 三种聚合",
+        "L1: 实现 update_risk_status(ctx) — 更新风险状态字段",
+        "所有函数都用 @register_action 装饰",
+        "验证: set_property 传入 {property: 'status', value: 'FAILED'} 正确返回 ActionResult",
+        "验证: adjust_numeric 传入 {property: 'valuation', factor: 0.7} 对值 10000000 返回 7000000",
+        "验证: graph_weighted_exposure 在含 3 个节点的测试图上, 正确计算加权总和"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-BE-004",
+      "title": "OntologyEngine 核心引擎 (构图 + DSL 解析 + 涟漪传导)",
+      "description": "作为开发者，我需要实现 OntologyEngine 调度引擎，使其能加载 JSON 构建 NetworkX 图、解析 Cypher 风格路径 DSL、执行条件求值、调用注入函数并生成结构化洞察。",
+      "acceptanceCriteria": [
+        "engine/graph_engine.py 实现 OntologyEngine 类, 初始化包含 graph(DiGraph), schema, initial_snapshot, action_registry(ActionRegistry), insights_feed, ripple_path, updated_nodes, highlight_edges",
+        "load_workspace(schema, action_module=None): 解析 graph_data 构建 NetworkX DiGraph, 节点属性展开为 node attrs, 边属性展开为 edge attrs, 保存 initial_snapshot, 若传入 action_module 则调用 register_from_module",
+        "execute_action(action_id, target_node_id): 查找 Action 定义, 执行 direct_effect 更新目标节点, 调用 _process_ripple_rules, 返回 {status, delta_graph, ripple_path, insights}",
+        "_process_ripple_rules: 解析 '<-[EDGE_TYPE]- NodeType' DSL (startsWith '<-' 判断方向, split('[')[1].split(']')[0] 提取边类型, split('- ')[1] 提取节点类型), 使用 in_edges/out_edges 遍历, 按 edge_type 和 node_type 过滤, eval 求值 condition",
+        "_apply_secondary_effect: 从 action_registry.get(func_name) 查找函数, 构建 ActionContext 传入, 获取 ActionResult 后写回节点属性和旧值, 调用 _generate_insight",
+        "_generate_insight: 生成结构化洞察对象 {text, type, severity, source_node, target_node, rule_id}, 从 rule 读取 insight_type 和 insight_severity, 用 format_map 填充模板",
+        "get_graph_for_render(): 导出 {nodes: [{id, ...attrs}], edges: [{source, target, ...attrs}]}",
+        "get_available_actions(node_id=None): 按 node_type 过滤匹配的 actions",
+        "reset(): 从 initial_snapshot 恢复所有节点属性",
+        "验证: 加载示例 JSON 后 graph.number_of_nodes() 和 graph.number_of_edges() 正确",
+        "验证: DSL '<-[TARGET_OF]- Company' 正确解析为 incoming + TARGET_OF + Company",
+        "验证: DSL '-[ACQUIRES]-> Company' 正确解析为 outgoing + ACQUIRES + Company",
+        "验证: execute_action('trigger_acquisition_failure', 'E_ACQ_101') 返回的 ripple_path 包含 E_ACQ_101 和受影响节点",
+        "验证: 返回的 insights 是结构化对象列表, 每个包含 text/type/severity 字段",
+        "验证: reset() 后所有节点属性恢复到初始状态"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-BE-005",
+      "title": "EventQueue 事件队列",
+      "description": "作为开发者，我需要实现事件队列来记录所有模拟操作历史，支持前端展示操作时间线和回溯。",
+      "acceptanceCriteria": [
+        "engine/event_queue.py 定义 SimulationEvent 数据类: timestamp(str), action_id, target_node_id, ripple_path, insights, delta_graph",
+        "EventQueue 类实现 push(action_id, target_node_id, result), get_history() -> list[dict], clear()",
+        "push 自动生成 ISO 格式 timestamp",
+        "get_history 返回所有事件的字典列表, 按时间顺序排列",
+        "在 OntologyEngine.execute_action 中调用 event_queue.push 记录每次推演",
+        "验证: 执行两次 simulate 后, get_history() 返回 2 条记录, 每条包含完整的 ripple_path 和 insights"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-BE-006",
+      "title": "FastAPI 路由层 (4 个 API 接口)",
+      "description": "作为开发者，我需要实现 4 个 REST API 接口，使前端能加载知识图谱、执行推演、重置状态和查看历史。",
+      "acceptanceCriteria": [
+        "api/routes.py 使用 APIRouter 前缀 /api/v1/workspace",
+        "POST /load: 接受 multipart/form-data 文件上传 (UploadFile) 或 JSON body {sample: 'corporate_acquisition'} 加载内置场景; 解析 JSON, 调用 engine.load_workspace(schema, action_module=action_functions); 返回 {metadata, ontology_def, graph_data, actions}",
+        "POST /simulate: 接受 SimulateRequest {action_id, node_id}; 调用 engine.execute_action; 返回 SimulateResponse; 同时 push 到 event_queue",
+        "POST /reset: 调用 engine.reset() + event_queue.clear(); 返回重置后的 graph_data",
+        "GET /history: 返回 event_queue.get_history()",
+        "所有接口包含异常处理, 无效参数返回 400 + 明确错误信息",
+        "路由注册到 main.py 的 FastAPI app",
+        "验证: curl POST /load 上传 JSON 文件, 返回包含 ontology_def 和 graph_data",
+        "验证: curl POST /simulate 执行推演, 返回包含 ripple_path 和 insights",
+        "验证: curl POST /reset 后节点属性恢复初始值",
+        "验证: curl GET /history 返回历史记录列表"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-CORE-001",
+      "title": "知识图谱加载完整链路 (JSON 解析 → Pydantic 校验 → 构图 → 函数注入)",
+      "description": "作为开发者，我需要实现从 JSON 文件到可用工作区的完整加载链路，包括内置示例数据服务、JSON 结构校验、图构建和 Action 函数自动注入，这是系统最核心的功能入口。",
+      "acceptanceCriteria": [
+        "POST /load 支持两种加载方式: (A) multipart/form-data 文件上传 — 用户拖拽自定义 JSON; (B) JSON body {\"sample\": \"corporate_acquisition\"} — 选择内置示例",
+        "内置示例服务: 后端从 samples/ 目录读取 JSON 文件, samples/ 目录路径通过 pathlib 相对于项目根目录解析, 支持未来添加更多示例文件",
+        "GET /api/v1/workspace/samples: 新增接口, 返回 samples/ 目录下所有可用的 .json 文件列表 [{name: 'corporate_acquisition', description: '...'}], 供前端下拉选择器渲染",
+        "JSON 校验链路: 原始 JSON -> json.loads() 解析 -> WorkspaceConfig(**data) Pydantic 校验 -> 若校验失败返回 422 + 详细的字段级别错误信息 (如 '缺少 ontology_def.node_types 字段')",
+        "图构建链路: 校验通过 -> engine.load_workspace(schema_dict) -> NetworkX DiGraph 构建 -> initial_snapshot 保存 -> 返回渲染数据",
+        "Action 函数注入链路: load_workspace 同时接收 action_module 参数 -> action_registry.register_from_module(action_module) -> 扫描所有 @register_action 装饰的函数 -> 注册到引擎的 ActionRegistry",
+        "函数名校验: 加载完成后, 遍历 action_engine.actions 中所有 ripple_rules 的 effect_on_target.action_to_trigger, 检查每个函数名是否已在 ActionRegistry 中注册; 若有未注册的函数名, 返回明确的警告信息 (不阻断加载但 warn)",
+        "加载成功的完整返回结构: {metadata, ontology_def (含视觉样式), graph_data (G6 渲染格式), actions (display_name 列表), registered_functions: ['set_property', 'adjust_numeric', ...]}",
+        "幂等性: 多次调用 /load 不会叠加状态, 每次加载都是全新的工作区 (graph.clear() + action_registry 重建)",
+        "验证: 上传一个合法的 JSON 文件, 返回 200 + 完整数据",
+        "验证: 上传一个缺少 ontology_def 的非法 JSON, 返回 422 + Pydantic ValidationError 详情",
+        "验证: 上传一个引用了不存在函数名 (如 'nonexistent_func') 的 JSON, 返回成功但响应中包含 warnings 字段",
+        "验证: {\"sample\": \"corporate_acquisition\"} 能正确加载内置示例",
+        "验证: GET /samples 返回可用示例列表",
+        "验证: 连续两次 /load 后, 第二次加载的是全新工作区 (不受第一次状态影响)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "这是系统的核心入口。JSON 加载 + Action 函数注入构成了 Palantir '知识图谱到智能' 的基础链路。"
+    },
+    {
+      "id": "US-CORE-002",
+      "title": "自定义 Action 函数扩展机制 (用户可注入业务函数)",
+      "description": "作为高级用户，我希望能在上传 JSON 知识图谱的同时，提供自定义的 Python Action 函数文件，使系统能加载我的业务逻辑而不仅限于内置函数库。",
+      "acceptanceCriteria": [
+        "除了内置的 actions/action_functions.py, 系统支持加载额外的 Python 函数文件",
+        "方式一 — 约定目录: 在 samples/ 目录下与 JSON 同名创建 Python 文件 (如 samples/corporate_acquisition.py), 加载 JSON 时自动检测并加载同名 .py 文件中的 @register_action 函数",
+        "方式二 — API 参数: POST /load 支持同时上传 .py 文件 (可选的第二个 UploadFile 参数 action_file), 后端通过 importlib 动态加载该 Python 模块并注册其中的函数",
+        "安全约束: 仅扫描带 @register_action 装饰器的函数, 不执行模块级别的任意代码 (POC 阶段说明此限制即可)",
+        "函数合并策略: 先注册内置 action_functions.py 中的通用函数 (set_property, adjust_numeric 等), 再注册自定义文件中的函数; 同名函数以自定义文件优先 (覆盖内置)",
+        "注册完成后记录日志: 打印已注册的函数列表, 标注来源 (builtin / custom)",
+        "在 /load 响应中返回 registered_functions 字段, 列出所有已注册函数名和来源: [{name: 'set_property', source: 'builtin'}, {name: 'my_custom_calc', source: 'custom'}]",
+        "验证: 只上传 JSON (不附带 .py 文件) 时, 仅内置函数被注册, 系统正常工作",
+        "验证: 同时上传 JSON + 自定义 .py 文件, 自定义函数被正确注册, JSON 中引用的自定义函数名能被 ActionRegistry.get() 找到",
+        "验证: 自定义 .py 中定义一个与内置同名的函数 (如 set_property), 自定义版本覆盖内置版本",
+        "验证: 自定义 .py 中的函数签名为 (ctx: ActionContext) -> ActionResult, 能被引擎正确调用并返回结果"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "此功能展示了系统的核心可扩展性: 引擎是纯调度器, 业务逻辑完全外置。不同领域的知识图谱可以携带自己的计算函数。"
+    },
+    {
+      "id": "US-DATA-001",
+      "title": "示例 JSON 数据: 收购事件风险传导场景",
+      "description": "作为演示者，我需要一个完整的示例 JSON 文件，包含多种节点类型、边关系和预设动作，使得一次操作能产生覆盖 L1/L2/L3 三层的多类型洞察。",
+      "acceptanceCriteria": [
+        "samples/corporate_acquisition.json 包含完整的 metadata, ontology_def, graph_data, action_engine",
+        "ontology_def.node_types 至少包含: Company (circle/蓝色), Event_Acquisition (diamond/橙色), Person (circle/绿色, 可选)",
+        "ontology_def.edge_types 至少包含: ACQUIRES, TARGET_OF, SUPPLIES_TO (含 dependency_weight)",
+        "graph_data 包含 6-10 个节点: 3-4 家 Company + 1-2 个 Event_Acquisition + 可选 Person",
+        "graph_data 包含合理的边关系, 形成有意义的收购 + 供应链拓扑",
+        "action_engine 包含至少 2 个 actions: trigger_acquisition_failure 和 trigger_acquisition_success",
+        "trigger_acquisition_failure 包含 3-5 条 ripple_rules, 覆盖: set_property (L1), adjust_numeric (L1), recalculate_valuation (L2), graph_weighted_exposure (L3)",
+        "每条 ripple_rule 包含 insight_type (event_trigger/risk_propagation/quantitative_impact/network_analysis/recommendation) 和 insight_severity (info/warning/critical)",
+        "insight_template 使用 {source[xxx]} 和 {target[xxx]} 语法引用节点属性",
+        "验证: 加载此 JSON 后 engine 能成功构图 (节点数和边数正确)",
+        "验证: execute_action('trigger_acquisition_failure', 'E_ACQ_101') 返回至少 3 条不同类型的洞察",
+        "验证: 返回的 ripple_path 长度 >= 3 (源节点 + 至少 2 个受影响节点)"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-BE-007",
+      "title": "后端引擎端到端集成验证",
+      "description": "作为开发者，我需要验证后端从 JSON 加载到涟漪推演的完整链路正确性，确保三层智能函数和结构化洞察全部工作正常。",
+      "acceptanceCriteria": [
+        "编写 Python 测试脚本 (pytest 或直接脚本), 完成完整流程: load_workspace -> execute_action -> 检查结果 -> reset -> 再次执行",
+        "加载 corporate_acquisition.json 后: graph 节点数和边数与 JSON 一致",
+        "执行 trigger_acquisition_failure: 返回 status='success'",
+        "返回的 updated_nodes 包含直接目标节点和所有受涟漪影响的节点",
+        "返回的 highlight_edges 包含传导路径上的所有边",
+        "返回的 insights 中至少包含 3 种不同的 insight_type",
+        "至少有一条 severity='critical' 的洞察",
+        "insight 的 text 字段中变量已被正确填充 (不含未替换的 {xxx})",
+        "reset 后: 所有节点属性恢复到初始值, 再次 execute_action 结果一致",
+        "验证 action_registry.list_actions() 包含所有已注册函数名",
+        "uvicorn 启动后 4 个 API 接口均可正常调用 (用 httpx 或 requests 测试)"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-001",
+      "title": "前端项目初始化 (Vite + React + TS + Ant Design + G6)",
+      "description": "作为开发者，我需要搭建 React 前端项目骨架，安装所有依赖并配置基础工程化。",
+      "acceptanceCriteria": [
+        "使用 Vite 创建 React + TypeScript 项目: frontend/ 目录",
+        "package.json 安装依赖: react 18+, typescript, @antv/g6 5.x, antd 5.x, axios, @ant-design/icons",
+        "配置 vite.config.ts: 端口 5173, proxy /api -> http://localhost:8000 (后端地址)",
+        "src/types/index.ts 定义所有 TypeScript 类型: NodeTypeDef, EdgeTypeDef, OntologyDef, GraphNode, GraphEdge, Action, LoadResponse, InsightItem, InsightType, InsightSeverity, SimulateResponse (与后端 Pydantic 模型一一对齐)",
+        "src/services/api.ts 封装 axios 实例和 4 个 API 调用函数: loadWorkspace(file|sample), simulate(action_id, node_id), resetWorkspace(), getHistory()",
+        "验证: npm run dev 启动成功, 访问 http://localhost:5173 显示默认页面",
+        "验证: npm run build 无 TypeScript 编译错误"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-002",
+      "title": "全局状态管理 (Context + useReducer)",
+      "description": "作为开发者，我需要实现 React Context 全局状态管理，使所有组件能共享工作区数据和推演状态。",
+      "acceptanceCriteria": [
+        "src/hooks/useWorkspace.ts 定义 WorkspaceState 接口: metadata, ontologyDef, graphData, actions, selectedNodeId, selectedNodeType, insights(InsightItem[]), isSimulating, simulationHistory",
+        "定义 WorkspaceAction 类型: LOAD_WORKSPACE, SELECT_NODE, DESELECT_NODE, SIMULATE_START, SIMULATE_DONE, RESET",
+        "实现 workspaceReducer(state, action) 纯函数, 处理所有 action 类型",
+        "创建 WorkspaceContext 和 WorkspaceProvider 组件",
+        "实现 useWorkspace() 自定义 hook, 返回 state + dispatch",
+        "src/hooks/useSimulation.ts 封装推演逻辑: onSimulate(action_id) 函数 -> dispatch SIMULATE_START -> 调用 API -> dispatch SIMULATE_DONE",
+        "验证: WorkspaceProvider 包裹 App 后, 子组件通过 useWorkspace() 能读取和更新状态",
+        "验证: dispatch LOAD_WORKSPACE 后 state.graphData 和 state.actions 正确更新"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-003",
+      "title": "三栏布局壳与 FileUploader",
+      "description": "作为用户，我希望看到一个清晰的三栏界面：左侧控制台、中央图谱画布、右侧情报流，并能通过拖拽上传 JSON 文件加载沙盘。",
+      "acceptanceCriteria": [
+        "src/components/Layout/AppLayout.tsx 使用 Ant Design Layout + Sider + Content 实现三栏布局",
+        "Header 区域显示 metadata.description (沙盘名称) + FileUploader 按钮 + Reset 按钮",
+        "左侧 Sider 宽度 ~280px, 放置 ControlPanel 组件",
+        "中央 Content 区域 flex:1 自适应宽度, 放置 GraphCanvas 组件",
+        "右侧 Sider 宽度 ~320px, 放置 InsightFeed 组件",
+        "src/components/FileUploader/index.tsx 使用 Ant Design Upload.Dragger, 支持拖拽上传 JSON 文件",
+        "上传后调用 loadWorkspace API -> dispatch LOAD_WORKSPACE 刷新全局状态",
+        "同时提供 Select 下拉选择器切换内置示例场景 (corporate_acquisition), 列表从 GET /samples 接口获取",
+        "Reset 按钮调用 resetWorkspace API -> dispatch RESET",
+        "验证: 浏览器访问后看到三栏布局, Header 显示正确",
+        "验证: 拖拽 JSON 文件上传后, Header 显示沙盘名称",
+        "验证: 下拉选择内置示例后, 自动加载并渲染图谱",
+        "验证: 点击 Reset 按钮后界面状态重置"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-004",
+      "title": "GraphCanvas 图谱渲染 (AntV G6 自适应样式)",
+      "description": "作为用户，我希望在中央画布上看到力导向布局的知识图谱，节点颜色/形状由 ontology_def 驱动，零硬编码。",
+      "acceptanceCriteria": [
+        "src/components/GraphCanvas/index.tsx 使用 @antv/g6 5.x 创建 Graph 实例",
+        "从 ontologyDef.node_types 动态构建节点样式映射: type -> {fill: color, type: shape}",
+        "从 ontologyDef.edge_types 动态构建边样式映射: type -> {stroke: color, lineDash: style=='dashed' ? [4,4] : []}",
+        "节点标签显示 properties.name (若存在) 或 id",
+        "使用力导向布局 (d3-force 或 forceAtlas2) 自动排列节点",
+        "节点点击事件: dispatch SELECT_NODE({nodeId, nodeType})",
+        "画布空白区域点击: dispatch DESELECT_NODE",
+        "选中节点高亮显示 (描边加粗 + 阴影)",
+        "图谱容器自适应父容器大小, 窗口 resize 时自动调整",
+        "验证: 加载示例数据后, 图谱正确渲染所有节点和边",
+        "验证: Company 节点为蓝色圆形, Event_Acquisition 为橙色菱形",
+        "验证: 点击节点后该节点高亮, 点击空白取消高亮"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-005",
+      "title": "ControlPanel 动态控制台 (属性面板 + 动作按钮 + 图例)",
+      "description": "作为用户，我选中一个节点后，希望在左侧看到它的详细属性、可执行的动作按钮和图例说明，且所有内容由数据驱动。",
+      "acceptanceCriteria": [
+        "src/components/ControlPanel/index.tsx 包含三个区域: 节点属性卡片 + 动作按钮区 + 图例区",
+        "节点属性卡片: 选中节点后, 遍历 node.properties 的 key-value 生成 Ant Design Descriptions 组件, 未选中时显示提示'请点击节点查看详情'",
+        "动作按钮区: 根据 selectedNodeType 过滤 actions 中 target_node_type 匹配的项, 渲染 display_name 为 Button, 未匹配时隐藏按钮区",
+        "点击动作按钮触发 onSimulate(action_id) -> 调用 useSimulation hook",
+        "推演中 (isSimulating=true) 按钮禁用并显示 loading 状态",
+        "图例区: 遍历 ontologyDef.node_types 生成 color 圆点 + label 文本列表",
+        "验证: 选中 Event_Acquisition 节点后, 控制台显示其属性 (date, status, deal_size) 和 '模拟收购失败事件' 按钮",
+        "验证: 选中 Company 节点后, 动作按钮区不显示 (因为 action 只针对 Event_Acquisition)",
+        "验证: 图例显示所有节点类型的颜色和中文标签"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-006",
+      "title": "InsightFeed 结构化情报叙事流",
+      "description": "作为用户，我希望在右侧看到每次模拟产生的智能洞察，按类型差异化渲染（不同图标/颜色），并能点击洞察联动高亮图谱节点。",
+      "acceptanceCriteria": [
+        "src/components/InsightFeed/index.tsx 使用 Ant Design Timeline 组件展示洞察列表",
+        "每条洞察根据 insight_type 渲染不同图标: event_trigger(闪电/蓝), risk_propagation(链条/橙), quantitative_impact(计算器/紫), network_analysis(网络/红), recommendation(灯泡/绿)",
+        "每条洞察根据 severity 渲染不同标签颜色: info(蓝), warning(橙), critical(红)",
+        "severity='critical' 的洞察卡片添加脉冲动画或红色边框强调",
+        "每次模拟产生的洞察作为一组, 用 Card 包裹, 标题为 action 的 display_name + 时间戳",
+        "点击洞察卡片时, dispatch SELECT_NODE 联动 GraphCanvas 高亮 target_node",
+        "洞察列表按时间倒序排列 (最新在上), 支持滚动",
+        "未进行过模拟时显示空状态提示",
+        "验证: 执行一次模拟后, 右侧显示多条不同类型/颜色的洞察卡片",
+        "验证: 点击某条洞察后, 图谱中对应节点被高亮"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-FE-007",
+      "title": "涟漪传导动画 (Ripple Animation)",
+      "description": "作为用户，我触发模拟后，希望在图谱上看到从源节点沿传导路径逐步扩散的涟漪动画效果，让风险传导过程可视化。",
+      "acceptanceCriteria": [
+        "收到 SimulateResponse 后, 按 ripple_path 顺序逐节点播放动画",
+        "每步间隔 400-600ms, 形成明显的逐步扩散效果",
+        "节点动画: 放大 1.5x -> 高亮色闪烁 -> 恢复原大小但保留新状态颜色",
+        "边动画: 沿 highlight_edges 逐条变为红色/橙色",
+        "动画期间 isSimulating=true, ControlPanel 按钮禁用",
+        "动画播放完毕后: 批量更新 updated_nodes 的最终样式 (如 HIGH_RISK 节点变为红色), dispatch SIMULATE_DONE",
+        "使用 G6 的 setItemState 或 updateData API 实现状态切换",
+        "验证: 触发模拟后, 图谱上按路径顺序看到节点逐个高亮闪烁",
+        "验证: 传导路径上的边变为红色",
+        "验证: 动画结束后受影响节点保持新的视觉状态"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-DEPLOY-001",
+      "title": "命令行开发模式运行与项目文档",
+      "description": "作为开发者或演示者，我需要通过简单的命令行指令就能启动前后端服务并运行完整的应用，同时有清晰的 README 文档指导操作。",
+      "acceptanceCriteria": [
+        "根目录 README.md 包含: 项目简介、架构图 (ASCII 或 Mermaid)、技术栈说明、快速开始指南、目录结构说明",
+        "backend/README.md 包含: 后端安装与启动步骤、API 接口文档摘要、如何编写自定义 Action 函数的说明",
+        "frontend/README.md 包含: 前端安装与启动步骤、环境变量配置说明",
+        "后端启动: cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload --port 8000",
+        "前端启动: cd frontend && npm install && npm run dev (自动代理到 8000 端口)",
+        "可选: 根目录提供 start.sh 一键启动脚本, 同时拉起后端和前端 (使用 & 后台运行或 concurrently)",
+        "start.sh 脚本检测 Python 和 Node.js 环境是否可用, 给出友好提示",
+        "后端启动日志中打印: '已加载 N 个内置 Action 函数: [set_property, adjust_numeric, ...]' 和 '可用示例数据: [corporate_acquisition]'",
+        "Swagger 文档: 访问 http://localhost:8000/docs 能看到完整的 API 文档 (FastAPI 自动生成), 包含 /load, /simulate, /reset, /history, /samples",
+        "验证: 按照 README 步骤, 从零开始 (clone 后) 能在 5 分钟内启动完整应用",
+        "验证: uvicorn 启动后 http://localhost:8000/docs 显示 Swagger UI",
+        "验证: npm run dev 启动后 http://localhost:5173 显示前端界面",
+        "验证: start.sh 一键启动后前后端均可访问"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": "命令行运行是 POC 的主要使用方式。README 文档是项目交付的重要组成部分。"
+    },
+    {
+      "id": "US-DEPLOY-002",
+      "title": "Docker Compose 容器化部署",
+      "description": "作为运维或演示者，我需要通过 docker-compose up 一键部署整个应用，无需手动安装 Python/Node.js 环境。",
+      "acceptanceCriteria": [
+        "backend/Dockerfile: 基于 python:3.11-slim, COPY requirements.txt -> pip install -> COPY app/ -> CMD uvicorn, 暴露 8000 端口",
+        "frontend/Dockerfile: 多阶段构建 — 阶段1 node:20-alpine npm install + npm run build -> 阶段2 nginx:alpine 拷贝 dist/ 到 /usr/share/nginx/html",
+        "frontend/nginx.conf: 配置 /api 路径反向代理到 backend:8000, 其余路径返回 index.html (SPA)",
+        "docker-compose.yml: 定义 backend 和 frontend 两个服务, frontend depends_on backend, backend 端口 8000, frontend 端口 80 (或 3000)",
+        "docker-compose.yml: backend 挂载 samples/ 目录作为 volume (便于运行时添加示例数据)",
+        "docker-compose.yml: 支持通过 .env 文件配置端口等参数",
+        ".dockerignore: 排除 node_modules, __pycache__, .git, .venv 等",
+        "根目录 README.md 补充 Docker 部署章节: docker-compose up -d --build",
+        "验证: docker-compose build 两个镜像均构建成功",
+        "验证: docker-compose up 后 http://localhost:3000 (或 80) 显示前端界面",
+        "验证: 通过前端能正常上传 JSON、执行模拟、看到涟漪动画和洞察",
+        "验证: docker-compose down 后清理干净, 再次 up 无残留状态"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": "Docker 部署是可选的生产级部署方式, 但对演示非常有价值 — 一键启动, 无环境依赖。"
+    },
+    {
+      "id": "US-INT-001",
+      "title": "前后端全链路集成验证",
+      "description": "作为演示者，我需要验证从上传 JSON 到看到涟漪动画和智能洞察的完整链路，确保系统作为一个整体正常工作。",
+      "acceptanceCriteria": [
+        "后端 uvicorn 启动在 8000 端口, 前端 vite dev 启动在 5173 端口 (或 docker-compose up 启动两个服务)",
+        "浏览器访问前端页面看到三栏布局",
+        "方式一: 从下拉选择器选择 'corporate_acquisition' 内置示例, 图谱自动加载渲染",
+        "方式二: 拖拽自定义 JSON 文件上传, 图谱正确渲染所有节点和边",
+        "节点颜色/形状与 ontology_def 定义一致",
+        "Header 显示沙盘描述 '基于投资与收购事件的风险传导推演沙盘'",
+        "点击 E_ACQ_101 节点, 左侧 ControlPanel 显示其属性和 '模拟收购失败事件' 按钮",
+        "点击按钮后: 图谱播放涟漪动画 (按 ripple_path 逐步扩散), 右侧 InsightFeed 显示多条结构化洞察",
+        "洞察中至少包含 3 种不同 insight_type 的卡片 (如 quantitative_impact + risk_propagation + network_analysis)",
+        "点击 Reset 按钮, 图谱恢复初始状态, InsightFeed 清空",
+        "再次执行模拟, 结果与首次一致 (证明 reset 正确)",
+        "切换上传另一个不同领域的 JSON (如果准备了的话), 系统完全自适应渲染新图谱和新动作按钮",
+        "在 Swagger UI (http://localhost:8000/docs) 中能直接调用所有 API 并看到正确响应"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

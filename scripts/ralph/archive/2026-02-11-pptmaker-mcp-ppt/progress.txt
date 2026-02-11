@@ -1,0 +1,653 @@
+## Codebase Patterns
+- Monorepo structure: mcp-ppt-server/ (Python MCP), ai-service/ (Python FastAPI), frontend/ (Next.js)
+- Cross-service integration tests live in root tests/ directory (e.g., tests/test_fullstack_integration.py)
+- Python services use pyproject.toml + uv for dependency management
+- Dockerfiles use python:3.12-slim base image with uv for pip installs
+- Shared volume `ppt-output` between mcp-ppt-server and ai-service for PPT file exchange
+- All config via .env file, loaded by docker-compose env_file directive
+- MCP server on port 8000, AI service on port 8001, frontend on port 3000
+- FastMCP port is set via `mcp.settings.port`, NOT via `mcp.run(port=...)` — run() only takes transport and mount_path
+- FastMCP HTTP transport uses `transport="sse"`, valid options: "stdio", "sse", "streamable-http"
+- mcp-ppt-server is a flat Python project (not a package), install deps directly not via `pip install -e .`
+- state.py uses module-level dicts for in-memory storage — simple and effective for single-process MCP server
+- template_analyzer.py: dual-layer recognition — named prefix (TXT_/CHART_/TABLE_/IMG_) first, then placeholder type inference, then shape type inference
+- Theme extraction: access theme XML via `slide_master.part.rels` -> find rel with 'theme' in reltype -> parse blob with etree
+- Placeholder font properties are often None on layouts (inherited from theme) — font info may be null in TemplateConfig
+- Use PYTHONPATH=. when running tests from mcp-ppt-server/ directory (flat project, no package install)
+- PP_PLACEHOLDER skip list: DATE, FOOTER, SLIDE_NUMBER — these are metadata, not content fields
+- shape_finder.py: 4 strategies — exact name match, layout placeholder name match (for TXT_/CHART_/TABLE_/IMG_ prefixed field_ids), auto placeholder idx match (auto_{role}_{idx}), auto shape_id match (auto_{type}_{shape_id})
+- text_formatter.py: snapshot paragraph styles before clear, restore after writing — font snapshot prefers run-level, falls back to para-level
+- text_frame.clear() leaves one empty paragraph (paragraphs[0]) — use it for first line, add_paragraph() for rest
+- RGBColor.from_string("003366") reconstructs color from hex — useful for snapshot/restore round-trips
+- python-pptx Table has NO add_row() method — add rows by deepcopy of last `<a:tr>` XML element and appending to `table._tbl`
+- content_tools.py: 4 tools (fill_text, fill_chart, fill_table, fill_slide_batch) — fill_slide_batch is the batch optimization reducing MCP round-trips
+- review_tools.py: 2 tools (get_slide_content, validate_slide) — validate checks GHOSTING/EMPTY_REQUIRED/CLUTTER
+- _REQUIRED_ROLES for MBB quality: action_title, source — these must be non-empty
+- chart.plots[0].series length == 0 means chart has no data (GHOSTING condition)
+- _read_shape_content returns None for shapes without text_frame/chart/table (e.g., groups, freeforms)
+- CRITICAL: Slide placeholders get DEFAULT names (e.g. "Title 1") even when layout placeholders are renamed (e.g. "TXT_Title") — shape_finder must fall back to layout placeholder index matching for named field_ids
+- LayoutShapes has NO add_textbox/add_chart — add shapes to layouts via raw XML appended to spTree
+- Python 3.12+ regex: `(?i)` global flag must be at start of expression, use `(?i)(?:alt1|alt2)` for case-insensitive alternation
+- MBB_Blue.pptx created programmatically via scripts/create_mbb_blue.py — regenerate with `.venv/bin/python scripts/create_mbb_blue.py`
+- FastAPI app entry: app/main.py creates FastAPI instance, Dockerfile CMD runs `uvicorn app.main:app`
+- SSE streaming: use sse-starlette EventSourceResponse + LangGraph workflow.astream(stream_mode="updates") for node-by-node streaming
+- SSE event types: thinking (step progress), slide (page completion), done (file_path + total_slides), error (exception message)
+- Downloads endpoint: OUTPUT_DIR shared via Docker volume, FileResponse with path traversal protection
+- TestClient from fastapi.testclient for sync endpoint tests; AsyncMock + patch for async workflow tests
+- E2E testing pattern: FakeMCPClient class with __aenter__/__aexit__ + call_tool dispatch for mocking MCP server
+- LLM mock with call counter: first call returns planner output, subsequent calls return synthesizer outputs per slide
+- Pre-existing test_llm.py failures are SOCKS proxy related (environment issue), not code bugs
+- Supabase migrations: numbered SQL files (001-005) in ai-service/migrations/, use IF NOT EXISTS and gen_random_uuid() for idempotency
+- FK constraints added via ALTER TABLE in later migrations when referenced table is created after referencing table
+- Frontend: Next.js 14 App Router + TypeScript + Tailwind CSS 3.4 + shadcn/ui utility pattern (cn from clsx + tailwind-merge)
+- Frontend Dockerfile: multi-stage node:20-alpine build with `output: "standalone"` in next.config.js for minimal Docker image
+- Frontend env: NEXT_PUBLIC_API_URL set via docker-compose environment for client-side API calls to ai-service
+- CSS variables in globals.css for theming (--primary: #003366, --accent: #0066cc) — consistent with MBB Blue palette
+- Frontend SSE pattern: useSSE hook (fetch + ReadableStream) manages SSEState, ChatPanel receives sseState + onGenerate callback from page.tsx
+- Frontend component props flow: page.tsx (useSSE) → ChatPanel (sseState, onGenerate) + DownloadBar (result) — state lifted to page level
+- SSE done event includes presentation_id + slide summaries — frontend uses these for SlideList without extra API call
+- Slides API (ai-service /slides/*) proxies to MCP server for get_slide_content/fill_text/save_presentation — stateless per-request MCPPPTClient connections
+- SlideEditor fetches content on slide selection, renders text fields as editable Input/Textarea, chart/table as read-only indicators
+- Supabase upsert with on_conflict="key" for insert-or-update in one call — used in settings API
+- Settings API pattern: SETTINGS_SCHEMA dict defines valid keys + is_secret flags, mask secrets on read, skip masked values on write
+
+# Ralph Progress Log
+Started: 2026年 2月11日 星期三 11时39分04秒 CST
+---
+
+## 2026-02-11 - US-INFRA-001
+- Initialized monorepo with 3 service directories: mcp-ppt-server/, ai-service/, frontend/
+- Created pyproject.toml for both Python services with all required dependencies
+- Created package.json for frontend with next, tailwindcss, @shadcn/ui
+- Created docker-compose.yml with 3 services, shared ppt-output volume
+- Created .env.example with all 10 API key templates
+- Created Dockerfiles for both Python services (python:3.12-slim + uv)
+- Added .gitignore
+- Files changed: .env.example, .gitignore, docker-compose.yml, mcp-ppt-server/*, ai-service/*, frontend/package.json
+- **Learnings for future iterations:**
+  - Docker daemon may not be running in CI/dev environments - validate Dockerfiles programmatically when possible
+  - pyproject.toml can be validated with tomllib, package.json with json module
+  - docker-compose.yml can be validated with PyYAML
+  - git init creates 'master' branch by default, need explicit checkout for feature branch
+---
+
+## 2026-02-11 - US-MCP-001
+- Fixed server.py: port is set via `mcp.settings.port` and host via `mcp.settings.host` (not run() kwargs)
+- Set host to "0.0.0.0" in HTTP mode for Docker container accessibility
+- state.py already had all required methods from US-INFRA-001 skeleton
+- Fixed Dockerfile: install deps directly instead of `uv pip install -e .` (flat project, not a package)
+- Verified stdio mode starts and waits for input
+- Verified HTTP mode starts Uvicorn, SSE endpoint returns 200 with text/event-stream
+- Verified all state.py methods: store/get presentation, cache/get template config, KeyError on missing
+- Files changed: mcp-ppt-server/server.py, mcp-ppt-server/Dockerfile
+- **Learnings for future iterations:**
+  - FastMCP.run() signature: `(transport, mount_path)` — no port/host kwargs
+  - Port/host must be set on `mcp.settings` before calling run()
+  - FastMCP.__init__() accepts port/host as kwargs if you want to set them at construction time
+  - SSE endpoint is at `/sse` by default, messages at `/messages/`
+  - The .venv in mcp-ppt-server only has pip initially — need to install deps before testing
+---
+
+## 2026-02-11 - US-MCP-002
+- Implemented engine/template_analyzer.py with analyze_template(template_path) -> dict
+- Dual-layer recognition engine:
+  - Priority 1: Named prefix matching (TXT_*, CHART_*, TABLE_*, IMG_*) -> source='named'
+  - Priority 2: PP_PLACEHOLDER type inference (TITLE->action_title, BODY->body_text, etc.) -> source='inferred'
+  - Priority 3: MSO_SHAPE_TYPE inference for non-placeholder chart/table/picture shapes -> source='inferred'
+- TemplateConfig output includes: template_name, theme (color_scheme + fonts), layouts with fields
+- Each field includes: field_id, source, type, semantic_role, position (inches), hint, font (for text), chart_type/series_count (for charts)
+- Theme extraction via XML blob parsing from slide master relationships
+- Skips metadata placeholders (DATE, FOOTER, SLIDE_NUMBER)
+- Created engine/__init__.py for package structure
+- Created tests/test_template_analyzer.py with 5 test cases
+- Files changed: mcp-ppt-server/engine/__init__.py, mcp-ppt-server/engine/template_analyzer.py, mcp-ppt-server/tests/test_template_analyzer.py
+- **Learnings for future iterations:**
+  - python-pptx placeholder font properties are often None on layouts (inherited from theme XML)
+  - Theme XML is accessed via slide_master.part.rels, find rel with 'theme' in reltype, parse blob with etree.fromstring()
+  - lxml FutureWarning: use `len(elem) > 0` instead of truth-testing elements
+  - Named shapes in layouts can be set by modifying cNvPr/@name in the XML (useful for test fixtures)
+  - PP_PLACEHOLDER.OBJECT (type 7) is used for generic content placeholders — maps to body_text
+---
+
+## 2026-02-11 - US-MCP-003
+- Implemented engine/shape_finder.py with find_shape(slide, field_id) function
+- Three matching strategies:
+  - Strategy 1: Exact name match — field_id matches shape.name directly (for named shapes like TXT_ActionTitle)
+  - Strategy 2: Auto placeholder match — field_id like "auto_{role}_{idx}" matches by placeholder_format.idx
+  - Strategy 3: Auto shape type match — field_id like "auto_{type}_{shape_id}" matches by shape.shape_id
+- ValueError on miss includes list of all available shape names on the slide
+- Created tests/test_shape_finder.py with 5 test cases covering all strategies + error case
+- All 10 tests pass (5 existing + 5 new)
+- Files changed: mcp-ppt-server/engine/shape_finder.py, mcp-ppt-server/tests/test_shape_finder.py
+- **Learnings for future iterations:**
+  - Slides have shapes via slide.shapes, placeholders via slide.placeholders — shapes is the superset
+  - shape.placeholder_format.idx is the placeholder index (0=title, 1=body typically)
+  - shape.shape_id is a unique integer per shape in the presentation XML
+  - Renaming shapes on slides uses same XML technique as layouts: modify cNvPr/@name
+  - pytest needs to be installed in the .venv separately (not included by default)
+---
+
+## 2026-02-11 - US-MCP-004
+- Implemented engine/text_formatter.py with fill_text_preserve_style(shape, text, bullet_points) function
+- _snapshot_paragraph_styles(tf) captures per-paragraph: alignment, level, space_before, space_after, font (name, size, bold, italic, color_rgb)
+- Font snapshot captures from first run if available, falls back to paragraph-level font
+- fill_text_preserve_style: clears text_frame, writes new content, restores matching snapshot per paragraph
+- bullet_points: each string becomes one paragraph, reuses last snapshot when count exceeds original paragraphs
+- bullet_points takes precedence over text when both provided
+- Created tests/test_text_formatter.py with 7 test cases covering: snapshot capture, style preservation, bullet levels, no-text-frame error, precedence, empty frame, none inputs
+- All 17 tests pass (10 existing + 7 new)
+- Files changed: mcp-ppt-server/engine/text_formatter.py, mcp-ppt-server/tests/test_text_formatter.py
+- **Learnings for future iterations:**
+  - text_frame.clear() leaves one empty paragraph (paragraphs[0]) — use it for the first line, add_paragraph() for subsequent
+  - Run-level font properties (font.name, font.size, etc.) can be None when inherited from theme — snapshot captures None and _apply_font skips None values to preserve inheritance
+  - RGBColor.from_string("003366") reconstructs color from hex string — useful for snapshot/restore
+  - para.font is the paragraph-level font (applies to all runs), run.font is run-level — snapshot prefers run-level
+  - Shapes added via add_shape() always have text_frame; only pictures/charts/groups lack it
+- chart_builder.py: replace_chart_data uses CategoryChartData + chart.replace_data() — preserves chart_type and visual styling
+- build_waterfall_series: running total tracks cumulative value; is_total resets running to item value; negative decrements shift base down
+---
+
+## 2026-02-11 - US-MCP-005
+- Implemented engine/chart_builder.py with two public functions:
+  - replace_chart_data(chart_shape, categories, series): swaps chart data via CategoryChartData, preserves chart_type
+  - build_waterfall_series(items): produces 3 stacked-bar series (invisible_base, increase, decrease) for waterfall simulation
+- is_total=True items start from base=0, non-total items stack on running total
+- Negative values shift base down and fill decrease series
+- Created tests/test_chart_builder.py with 7 test cases:
+  - replace_chart_data: updates values, preserves chart type, no-chart error, empty-series error
+  - build_waterfall_series: basic waterfall, negative total, all-increases
+- All 24 tests pass (7 new + 17 existing)
+- Files changed: mcp-ppt-server/engine/chart_builder.py, mcp-ppt-server/tests/test_chart_builder.py
+- **Learnings for future iterations:**
+  - chart.replace_data(chart_data) is the python-pptx way to swap data — it preserves chart_type and formatting
+  - CategoryChartData is for category-based charts (bar, column, line, area); XyChartData for scatter/bubble
+  - plot.categories returns category labels, plot.series[i].values returns tuple of values — useful for assertions
+  - shapes.add_chart() requires chart_type enum, position, size, and initial chart_data
+  - has_chart attribute on shapes distinguishes chart shapes from others
+- Tool modules use register(mcp) pattern: define @mcp.tool() functions inside register(), call from server.py
+- Slide deletion: use `prs.part.drop_rel(rId)` + `sldIdLst.remove(sldId)` to properly remove slides (just removing sldId leaves orphan parts causing duplicate name warnings)
+- `_sldIdLst` sldId elements have rId in `{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id` attribute
+---
+
+## 2026-02-11 - US-MCP-006
+- Implemented tools/template_tools.py with 3 MCP tools: list_templates, analyze_template, get_layout_fields
+- list_templates: scans templates/ dir for .pptx files, returns name/file/layouts/description, caches configs on first scan
+- analyze_template: calls engine/template_analyzer.py, caches result in state.template_configs, returns cached on repeat calls
+- get_layout_fields: returns fields subset for a specific layout, supports name (case-insensitive) or index lookup
+- Created tools/__init__.py for package structure
+- Used register(mcp) pattern: template_tools.register(mcp) called from server.py to register tools
+- Helper functions _resolve_template_path and _find_layout handle error cases with clear messages
+- Created tests/test_template_tools.py with 16 test cases covering all 3 tools + error paths
+- All 40 tests pass (16 new + 24 existing)
+- Files changed: mcp-ppt-server/tools/__init__.py, mcp-ppt-server/tools/template_tools.py, mcp-ppt-server/tests/test_template_tools.py, mcp-ppt-server/server.py
+- **Learnings for future iterations:**
+  - Use register(mcp) pattern for tool modules — keeps server.py clean, each module registers its own tools
+  - FastMCP @mcp.tool() decorator registers tools — define functions inside register() to capture mcp reference
+  - monkeypatch.setattr works well for overriding module-level constants (like TEMPLATES_DIR) in tests
+  - Test tool logic directly via helper functions rather than going through MCP protocol — faster and simpler
+  - _resolve_template_path handles both "name" and "name.pptx" inputs for flexibility
+---
+
+## 2026-02-11 - US-MCP-007
+- Implemented tools/presentation_tools.py with 3 MCP tools: create_presentation, add_slide, save_presentation
+- create_presentation: copies template, properly clears example slides (drop_rel + sldIdLst.remove), caches template config, returns presentation_id + available_layouts
+- add_slide: resolves layout by name (case-insensitive) or index, returns slide_index + layout name + fields_to_fill from cached TemplateConfig
+- save_presentation: saves to output/ dir, auto-appends .pptx extension, returns file_path + total_slides + file_size_kb
+- Registered presentation_tools in server.py via register(mcp) pattern
+- Created tests/test_presentation_tools.py with 17 test cases covering all 3 tools + error paths + full lifecycle
+- All 57 tests pass (17 new + 40 existing), zero warnings
+- Files changed: mcp-ppt-server/tools/presentation_tools.py, mcp-ppt-server/tests/test_presentation_tools.py, mcp-ppt-server/server.py
+- **Learnings for future iterations:**
+  - Slide deletion must use `prs.part.drop_rel(rId)` + `sldIdLst.remove(sldId)` — just removing sldId leaves orphan slide parts in the package, causing "Duplicate name" warnings on save
+  - sldId elements store rId in `{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id` attribute
+  - `prs.slide_layouts` is indexable by integer; layout.name gives the layout name
+  - `_get_layout_fields` falls back to listing placeholders from the layout if no cached TemplateConfig matches
+  - OUTPUT_DIR needs `mkdir(parents=True, exist_ok=True)` before saving
+---
+
+## 2026-02-11 - US-MCP-008
+- Implemented tools/content_tools.py with 4 MCP tools: fill_text, fill_chart, fill_table, fill_slide_batch
+- fill_text: delegates to engine/text_formatter.py fill_text_preserve_style, supports text and bullet_points
+- fill_chart: delegates to engine/chart_builder.py replace_chart_data, optional chart_title override
+- fill_table: fills headers + rows, dynamically adds rows via XML deepcopy of last <a:tr> element
+- fill_slide_batch: batch fills multiple shapes in one call, returns {filled, skipped, errors} for resilient processing
+- Registered content_tools in server.py via register(mcp) pattern
+- Created tests/test_content_tools.py with 16 test cases covering all 4 tools + error paths + batch scenarios
+- All 73 tests pass (16 new + 57 existing)
+- Files changed: mcp-ppt-server/tools/content_tools.py, mcp-ppt-server/tests/test_content_tools.py, mcp-ppt-server/server.py
+- **Learnings for future iterations:**
+  - python-pptx Table has NO add_row() method — must add rows via XML: `deepcopy(last_tr)` + `tbl_xml.append(new_tr)`
+  - Table XML namespace is `{http://schemas.openxmlformats.org/drawingml/2006/main}` (a: prefix), find rows with `tbl.findall(f'{ns}tr')`
+  - fill_slide_batch catches exceptions per-shape and continues — errors don't stop the batch
+  - chart_title is set via `shape.chart.has_title = True` then `shape.chart.chart_title.text_frame.text = title`
+---
+
+## 2026-02-11 - US-MCP-009
+- Implemented tools/review_tools.py with 2 MCP tools: get_slide_content, validate_slide
+- get_slide_content: reads all shapes on a slide, returns {slide_index, layout, shapes: {name: {type, content/has_data}}, empty_required_fields}
+- Uses cached TemplateConfig field definitions to identify required fields
+- validate_slide: runs 3 MBB quality checks:
+  - GHOSTING: chart shape exists but chart.plots[0].series is empty
+  - EMPTY_REQUIRED: required fields (action_title, source) are empty or missing
+  - CLUTTER: body_text has >4 non-empty paragraphs
+- Returns {valid: bool, issues: [{type, shape, detail}]}
+- Registered review_tools in server.py via register(mcp) pattern
+- Created tests/test_review_tools.py with 14 test cases covering both tools + error paths
+- All 87 tests pass (14 new + 73 existing)
+- Files changed: mcp-ppt-server/tools/review_tools.py, mcp-ppt-server/tests/test_review_tools.py, mcp-ppt-server/server.py
+- **Learnings for future iterations:**
+  - chart.plots[0].series length == 0 is the reliable way to detect empty chart data (GHOSTING)
+  - _read_shape_content returns None for shapes without text_frame/chart/table — groups, freeforms, etc. are skipped
+  - _REQUIRED_ROLES = {action_title, source} — these are the MBB quality must-haves
+  - _get_field_defs_for_layout returns [] when no template config is cached — tools degrade gracefully
+  - Renaming shapes in tests: use p:nvSpPr/p:cNvPr XML path with presentation namespace
+---
+
+## 2026-02-11 - US-MCP-010
+- Created comprehensive E2E integration test (tests/test_e2e_integration.py) with 12 test cases
+- Full flow test: analyze_template -> create_presentation -> add_slide(Cover) -> fill_slide_batch(cover data) -> add_slide(Chart_Right) -> fill_slide_batch(chart data) -> validate_slide -> get_slide_content -> save_presentation
+- Chart fill E2E test: demonstrates chart data injection with 2 series, validates no GHOSTING, verifies data persists in saved file
+- Verified all 12 MCP tools are registered (list_templates, analyze_template, get_layout_fields, create_presentation, add_slide, save_presentation, fill_text, fill_chart, fill_table, fill_slide_batch, get_slide_content, validate_slide)
+- Verified Docker HTTP mode: Dockerfile CMD uses `python server.py -t http -p 8000`, docker-compose.yml maps port 8000, shares ppt-output volume and templates
+- Fixed critical bug in shape_finder.py: added Strategy 2 (layout placeholder name match) — when slides are created from layouts, placeholder shapes get default names (e.g. "Title 1") instead of the layout's renamed names (e.g. "TXT_Title"). New strategy looks up placeholder index from layout and matches by index on the slide.
+- Updated E2E template (create_e2e_template.py) to include TXT_Date, TXT_Kicker, TXT_Source, and CHART_Main shapes on example slides
+- All 99 tests pass (12 new E2E + 87 existing)
+- Files changed: mcp-ppt-server/engine/shape_finder.py, mcp-ppt-server/tests/test_e2e_integration.py, mcp-ppt-server/tests/create_e2e_template.py, mcp-ppt-server/templates/E2E_Test.pptx
+- **Learnings for future iterations:**
+  - Slide placeholders get DEFAULT names even when layout placeholders are renamed — shape_finder must fall back to layout placeholder index matching
+  - slide.slide_layout gives access to the layout from which the slide was created — useful for cross-referencing placeholder names
+  - python-pptx cannot add charts/tables to layouts programmatically — only to slides. Real MBB templates must have these placed in PowerPoint's Slide Master view
+  - For E2E testing without PyYAML, parse docker-compose.yml as plain text with string assertions
+  - _ToolFunctions pattern: register tool modules on a fake MCP object to access inner functions directly in tests
+---
+
+## 2026-02-11 - US-TPL-001
+- Created MBB_Blue.pptx template programmatically via scripts/create_mbb_blue.py
+- 4 layouts: Cover (TXT_Title, TXT_Subtitle, TXT_Date, IMG_Logo), Executive_Summary (TXT_Kicker, TXT_ActionTitle, TXT_Body, TXT_Source), Chart_Right (TXT_Kicker, TXT_ActionTitle, TXT_BodyLeft, CHART_Main, TXT_Source), Waterfall_Full (TXT_Kicker, TXT_ActionTitle, CHART_Waterfall, TXT_Source)
+- All shapes use TXT_/CHART_/IMG_ naming prefixes — analyze_template returns all fields with source='named'
+- MBB Blue color palette: dark blue #003366, mid blue #0066CC, accent orange #FF6600
+- Shapes added to layouts via raw XML manipulation (LayoutShapes has no add_textbox/add_chart)
+- Fixed regex bug in template_analyzer.py: `(?i)image|(?i)picture|(?i)photo` → `(?i)(?:image|picture|photo)` for Python 3.12 compatibility
+- Created naming_convention.md documenting full naming spec, layout definitions, and color palette
+- Files changed: mcp-ppt-server/engine/template_analyzer.py, mcp-ppt-server/scripts/create_mbb_blue.py, mcp-ppt-server/templates/MBB_Blue.pptx, mcp-ppt-server/naming_convention.md
+- **Learnings for future iterations:**
+  - LayoutShapes class has NO add_textbox/add_chart/add_shape — must manipulate spTree XML directly
+  - Use `_clear_layout_shapes()` to remove default placeholders before adding custom shapes
+  - Python 3.12 enforces global regex flags at expression start — `(?i)` in alternation branches causes re.error
+  - Textbox XML needs `txBox="1"` in cNvSpPr to be recognized as a textbox
+  - Non-placeholder shapes on layouts are detected by template_analyzer's second scan loop (layout.shapes, not layout.placeholders)
+- ai-service uses hatch build with packages=["app"] — install with `pip install -e .` or run tests with PYTHONPATH=.
+- ai-service providers are singletons (get_settings, get_supabase, get_llm creates new instances) — reset _settings in tests
+- httpx.Response methods (json, raise_for_status) are sync — use MagicMock not AsyncMock for response mocks in async tests
+- RAG pipeline: parser.py (LlamaParse) -> indexer.py (embed + pgvector) -> retriever.py (hybrid BM25 + vector)
+- Supabase RPC function match_document_chunks handles vector similarity search with optional document_id filter
+- _split_text uses simple character-based chunking with overlap — no sentence boundary detection needed for markdown
+  - CHART_ prefix textboxes on layouts serve as position markers — actual charts are added to slides during content fill
+- SynthesizerNode output (slide_fills) must match fill_slide_batch format: {"field_id": {"type": "text|chart|table", ...}}
+- LangGraph nodes: async functions taking GraphState, returning partial dict with only changed keys
+- planner_node pattern: fetch external config → build LLM context → invoke LLM → parse structured output
+---
+
+## 2026-02-11 - US-AI-001
+- Implemented app/config.py with pydantic-settings Settings class, singleton via get_settings()
+- Settings fields: llm_base_url, llm_api_key, llm_model, llm_model_fast, supabase_url, supabase_service_role_key, supabase_db_url, llama_cloud_api_key, brave_search_api_key, mcp_ppt_server_url
+- Implemented providers/llm.py: get_llm(fast=False) returns ChatOpenAI with configurable base_url (NewAPI compatible)
+- Implemented providers/brave_search.py: async brave_web_search(query, count) calls Brave Search API, returns [{title, url, description}]
+- Implemented providers/supabase_client.py: get_supabase() returns cached Supabase Client singleton
+- Implemented providers/mcp_client.py: MCPPPTClient with connect(), call_tool(name, **kwargs), list_tools(), async context manager support
+- MCPPPTClient posts to /messages/ with MCP protocol envelope, parses result.content[0].text JSON
+- Updated pyproject.toml: added supabase dep, [tool.hatch.build.targets.wheel] packages=["app"], pytest/ruff config, dev extras
+- Created 10 unit tests across 4 test files, all passing
+- Files changed: ai-service/app/config.py, ai-service/app/providers/__init__.py, ai-service/app/providers/llm.py, ai-service/app/providers/brave_search.py, ai-service/app/providers/supabase_client.py, ai-service/app/providers/mcp_client.py, ai-service/pyproject.toml, ai-service/tests/*
+- **Learnings for future iterations:**
+  - ai-service uses hatch build system — need [tool.hatch.build.targets.wheel] packages=["app"] since package is "app" not project name
+  - pydantic-settings Settings loads from .env by default via model_config env_file
+  - ChatOpenAI accepts base_url for NewAPI/OpenRouter compatible endpoints
+  - httpx.Response.json() and raise_for_status() are sync methods — use MagicMock not AsyncMock for response objects in tests
+  - AsyncMock makes ALL methods async by default — use MagicMock for objects with sync methods even in async test contexts
+  - Brave Search API: X-Subscription-Token header, results in data["web"]["results"]
+---
+
+## 2026-02-11 - US-AI-002
+- Implemented app/rag/parser.py: parse_pdf() uses LlamaParse (result_type='markdown') + _split_text() for character-based chunking with overlap
+- Implemented app/rag/indexer.py: index_chunks() embeds via OpenAI-compatible /embeddings endpoint, stores in Supabase document_chunks table with pgvector
+- Implemented app/rag/retriever.py: hybrid_retrieve() combines _vector_search (cosine similarity via Supabase RPC) + _bm25_search (PostgreSQL full-text search), merged via _merge_results with configurable weights
+- Created migrations/001_enable_pgvector.sql: enables pgvector extension, creates document_chunks table (id, document_id, chunk_index, content, metadata, embedding VECTOR(1536), fts TSVECTOR), ivfflat + gin indexes, match_document_chunks RPC function
+- Added llama-parse>=0.5.0 to pyproject.toml dependencies
+- Created app/rag/__init__.py for package structure
+- Created 10 unit tests across 3 test files (test_parser.py, test_indexer.py, test_retriever.py), all passing
+- All 20 tests pass (10 new + 10 existing), ruff clean
+- Files changed: ai-service/app/rag/__init__.py, ai-service/app/rag/parser.py, ai-service/app/rag/indexer.py, ai-service/app/rag/retriever.py, ai-service/migrations/001_enable_pgvector.sql, ai-service/pyproject.toml, ai-service/tests/test_parser.py, ai-service/tests/test_indexer.py, ai-service/tests/test_retriever.py
+- **Learnings for future iterations:**
+  - LlamaParse aload_data() returns list of Document objects with .text attribute — join with \n\n for full text
+  - _get_embeddings uses the same LLM base_url + api_key for embeddings (text-embedding-3-small model) — NewAPI compatible
+  - Supabase RPC functions are called via supabase.rpc("function_name", params).execute()
+  - Supabase text_search uses PostgreSQL tsvector — query terms joined with " & " for AND matching
+  - _merge_results uses content[:128] as dedup key — simple but effective for avoiding duplicate chunks
+  - ivfflat index requires lists parameter (100 is good default for <100k rows)
+  - Generated TSVECTOR column uses 'simple' config (no stemming) — works well for mixed Chinese/English content
+---
+
+## 2026-02-11 - US-AI-003
+- Implemented app/graph/state.py: GraphState TypedDict with all workflow state fields (prompt, template, template_config, slide_plans, current_slide_idx, retry_count, thinking_logs, output_path, retrieved_data, web_search_data) + SlidePlan TypedDict (layout, field_fills, data_requirements)
+- Implemented app/graph/nodes/planner.py: planner_node(state) async function
+  - _get_template_config(template): fetches TemplateConfig from MCP PPT Server via MCPPPTClient
+  - _build_layouts_summary(template_config): builds concise text summary of layouts/fields for LLM context
+  - _parse_slide_plans(llm_output): parses LLM JSON output (handles markdown fences) into SlidePlan list
+  - planner_node: orchestrates template analysis → LLM planning → slide_plans output, appends thinking_logs
+- PLANNER_SYSTEM_PROMPT: MBB-style consulting report planner instructions with template config injection
+- Created app/graph/__init__.py and app/graph/nodes/__init__.py
+- Created tests/test_planner.py with 11 test cases: _build_layouts_summary (3), _parse_slide_plans (4), planner_node (4)
+- All 11 new tests pass, ruff clean, 99 mcp-ppt-server tests still pass
+- Files changed: ai-service/app/graph/__init__.py, ai-service/app/graph/nodes/__init__.py, ai-service/app/graph/state.py, ai-service/app/graph/nodes/planner.py, ai-service/tests/test_planner.py
+- **Learnings for future iterations:**
+  - LangGraph nodes are async functions taking GraphState and returning partial state dicts — only return changed keys
+  - Mock _get_template_config (not MCPPPTClient directly) for cleaner planner tests
+  - LLM response.content is a string — use MagicMock (not AsyncMock) for the response object, AsyncMock for the LLM itself
+  - _parse_slide_plans handles markdown fences (```json...```) since LLMs often wrap JSON output
+  - thinking_logs should be copied (list()) before appending to avoid mutating the original state
+---
+
+## 2026-02-11 - US-AI-004
+- Implemented app/graph/nodes/retriever.py: retriever_node(state) async function
+  - Iterates slide_plans, calls hybrid_retrieve(query, top_k=3) for each data_requirement
+  - Deduplicates chunks by content within each slide
+  - Stores results in retrieved_data[slide_index] (list of content strings)
+  - Skips slides with empty data_requirements
+  - Preserves existing retrieved_data (merges, doesn't replace)
+- Implemented app/graph/nodes/web_searcher.py: web_searcher_node(state) async function
+  - Supplements RAG data with Brave Search for slides with insufficient RAG data (<3 chunks)
+  - Calls brave_web_search(query, count=3) for each data_requirement
+  - Deduplicates search results by dict equality within each slide
+  - Stores results in web_search_data[slide_index] (list of {title, url, description} dicts)
+  - Preserves existing web_search_data (merges, doesn't replace)
+  - Can be conditionally triggered by ValidatorNode (future story)
+- Created tests/test_retriever_node.py with 7 test cases
+- Created tests/test_web_searcher_node.py with 8 test cases
+- All 15 new tests pass, ruff clean, 99 mcp-ppt-server tests still pass
+- Files changed: ai-service/app/graph/nodes/retriever.py, ai-service/app/graph/nodes/web_searcher.py, ai-service/tests/test_retriever_node.py, ai-service/tests/test_web_searcher_node.py
+- **Learnings for future iterations:**
+  - RetrieverNode and WebSearcherNode follow same pattern as PlannerNode: async, partial state return, copy thinking_logs before mutating
+  - WebSearcherNode uses retrieved_data threshold (>=3 chunks) to decide whether to supplement with web search
+  - Both nodes use dict() to copy state dicts (retrieved_data, web_search_data) before mutating to avoid state mutation
+  - supabase and llama-parse must be installed in venv for import chain to work (retriever.py -> rag/retriever.py -> supabase_client.py)
+  - Pre-existing test_llm.py failures are caused by SOCKS proxy in environment, not code issues
+---
+
+## 2026-02-11 - US-AI-005
+- Implemented app/graph/nodes/synthesizer.py with synthesizer_node(state) async function
+  - _build_slide_context(idx, plan, template_config, retrieved_data, web_search_data): builds rich context string for LLM including layout fields, planner descriptions, RAG chunks, and web search results
+  - _parse_fills(llm_output): parses LLM JSON output (handles markdown fences) into fills dict matching fill_slide_batch format
+  - synthesizer_node: iterates slide_plans, calls LLM per slide with SYNTHESIZER_SYSTEM_PROMPT, produces slide_fills list
+- SYNTHESIZER_SYSTEM_PROMPT: MBB-style content writer instructions with precise output format rules for text/chart/table fields
+- Graceful error handling: parse failures produce empty fills dict instead of crashing, logged to thinking_logs
+- Added slide_fills field to GraphState (list[dict] — per-slide fills dicts for fill_slide_batch)
+- Updated comment in state.py (removed "future stories" note on retrieved_data/web_search_data)
+- Created tests/test_synthesizer.py with 14 test cases: _build_slide_context (5), _parse_fills (4), synthesizer_node (5)
+- All 58 ai-service tests pass, 99 mcp-ppt-server tests pass, ruff clean
+- Files changed: ai-service/app/graph/nodes/synthesizer.py, ai-service/app/graph/state.py, ai-service/tests/test_synthesizer.py
+- **Learnings for future iterations:**
+  - SynthesizerNode follows same pattern as PlannerNode: async, SystemMessage + HumanMessage, parse JSON output, partial state return
+  - LLM output for fills must match fill_slide_batch format exactly: {"field_id": {"type": "text|chart|table", ...}}
+  - Chart fills need: categories (list[str]), series (list[dict with name+values]), optional chart_title
+  - Table fills need: headers (list[str]), rows (list[list[str]])
+  - _build_slide_context truncates RAG chunks to 500 chars to avoid context overflow
+  - _parse_fills reuses same markdown fence stripping logic as _parse_slide_plans in planner
+  - Error recovery: empty fills dict {} is safe — fill_slide_batch will just skip all shapes
+---
+
+## 2026-02-11 - US-AI-006
+- Implemented app/graph/nodes/ppt_builder.py with ppt_builder_node(state) async function
+  - Uses MCPPPTClient async context manager to connect to MCP PPT Server
+  - Step 1: create_presentation(template) — creates new presentation from template
+  - Step 2: For each slide_plan, calls add_slide(layout) + fill_slide_batch(fills) using slide_index from add_slide result
+  - Step 3: save_presentation(filename) with uuid-based filename, stores output_path in state
+  - Handles empty fills gracefully (skips fill_slide_batch when fills dict is empty or index out of range)
+  - Logs progress per slide to thinking_logs (layout name, filled count, error count)
+- Created tests/test_ppt_builder.py with 9 test cases:
+  - Full flow (create + add + fill + save), template selection, layout routing, empty fills skip, more plans than fills, fill errors logging, thinking_logs preservation, default template, slide_index from add_result
+- All 67 ai-service tests pass, 99 mcp-ppt-server tests pass, ruff clean
+- Files changed: ai-service/app/graph/nodes/ppt_builder.py, ai-service/tests/test_ppt_builder.py
+- **Learnings for future iterations:**
+  - PPTBuilderNode follows same async pattern as other nodes but uses MCPPPTClient instead of LLM
+  - MCPPPTClient async context manager handles connect/close — use `async with MCPPPTClient() as client:`
+  - add_slide returns slide_index — use this for fill_slide_batch, not the loop index (slides may not start at 0)
+  - fill_slide_batch with empty fills dict {} is a no-op — safe to skip the call entirely for cleaner logs
+  - uuid.uuid4().hex[:8] gives a short unique filename suffix — avoids collisions without being too long
+- ValidatorNode routing: next_action field in GraphState drives conditional edges — "done"|"retry_retriever"|"retry_web"|"fallback"
+- LangGraph StateGraph: add_conditional_edges(source, routing_fn, {return_value: target_node}) for branching
+- LangGraph END sentinel is "__end__" string — use `from langgraph.graph import END`
+- LangGraph compiled graph .get_graph().nodes returns dict (node_id -> node), not list
+---
+
+## 2026-02-11 - US-AI-007
+- Implemented app/graph/nodes/validator.py with validator_node(state) and fallback_node(state)
+- validator_node: iterates slide_plans, calls MCP validate_slide per slide, collects all issues
+  - EMPTY_REQUIRED or GHOSTING → next_action='retry_retriever' (if retry_count < 3)
+  - CLUTTER-only → next_action='done' (non-critical, accept with warnings)
+  - retry_count >= 3 → next_action='fallback'
+  - No issues → next_action='done'
+  - Increments retry_count only on retry actions
+- fallback_node: logs issue summary, marks for degraded save
+- Implemented app/graph/workflow.py with build_workflow() function
+  - Full LangGraph StateGraph with 7 nodes: planner → retriever → web_searcher → synthesizer → ppt_builder → validator
+  - Conditional edges from validator: done→END, retry_retriever→retriever, retry_web→web_searcher, fallback→fallback→END
+  - _route_after_validator reads state['next_action'] for routing
+- Added to GraphState: validation_issues, next_action, presentation_id
+- Updated ppt_builder_node to store presentation_id in state for validator to use
+- Created tests/test_validator.py with 12 test cases (9 validator + 3 fallback)
+- Created tests/test_workflow.py with 7 test cases (5 routing + 2 graph compilation)
+- All 86 ai-service tests pass, 99 mcp-ppt-server tests pass, ruff clean
+- Files changed: ai-service/app/graph/state.py, ai-service/app/graph/nodes/validator.py, ai-service/app/graph/workflow.py, ai-service/app/graph/nodes/ppt_builder.py, ai-service/tests/test_validator.py, ai-service/tests/test_workflow.py
+- **Learnings for future iterations:**
+  - ValidatorNode uses MCPPPTClient (like PPTBuilderNode) — needs presentation_id from state
+  - Conditional routing in LangGraph: add_conditional_edges with a routing function that returns target node name or END
+  - LangGraph graph.get_graph().nodes is a dict, not a list — use .keys() for node IDs
+  - CLUTTER issues are non-critical — don't trigger retry, just accept with warnings
+  - retry_count should only increment on actual retry actions, not on done/fallback
+  - langgraph needs to be installed separately in venv (not auto-installed with other deps)
+---
+
+## 2026-02-11 - US-AI-008
+- Implemented app/main.py: FastAPI app with CORS middleware (allow all origins for dev), health check endpoint
+- Implemented api/routes/generate.py: POST /generate-report SSE endpoint
+  - GenerateRequest model: prompt (required), template (default "MBB_Blue")
+  - _run_workflow: executes LangGraph workflow via astream(stream_mode="updates"), yields SSE events per node
+  - SSE event types: thinking (step + message), slide (total_slides), done (file_path + filename + total_slides), error (message)
+  - Deduplicates thinking_logs across nodes (tracks seen_logs set)
+  - Uses sse-starlette EventSourceResponse for streaming
+- Implemented api/routes/downloads.py: GET /downloads/{filename}
+  - Serves .pptx files from OUTPUT_DIR (shared Docker volume)
+  - Path traversal protection: rejects "..", "/", "\" in filename
+  - Returns FileResponse with correct PPTX media type
+- Created api/__init__.py and api/routes/__init__.py
+- Removed api/routes/.gitkeep (replaced by real files)
+- Created tests/test_main.py (3 tests: health check, CORS headers, CORS preflight)
+- Created tests/test_generate.py (9 tests: _sse_event format/unicode, workflow thinking/slide/done/dedup/error events, endpoint SSE response, missing prompt 422)
+- Created tests/test_downloads.py (5 tests: existing file, not found, path traversal dotdot/slash, filename header)
+- All 103 ai-service tests pass (17 new + 86 existing), 99 mcp-ppt-server tests pass, ruff clean
+- Files changed: ai-service/app/main.py, ai-service/app/api/__init__.py, ai-service/app/api/routes/__init__.py, ai-service/app/api/routes/generate.py, ai-service/app/api/routes/downloads.py, ai-service/tests/test_main.py, ai-service/tests/test_generate.py, ai-service/tests/test_downloads.py
+- **Learnings for future iterations:**
+  - sse-starlette EventSourceResponse accepts async generator yielding dicts with "event" and "data" keys
+  - LangGraph astream(stream_mode="updates") yields {node_name: node_output} dicts per node completion — ideal for SSE streaming
+  - FastAPI CORS with allow_origins=["*"] returns literal "*" header, not the echoed origin
+  - TestClient from fastapi.testclient works synchronously — no need for async test client for endpoint tests
+  - Path traversal protection: check for "..", "/", "\" in filename before joining with OUTPUT_DIR
+  - asyncio.sleep(0) after each SSE yield allows event loop to flush the event to the client
+---
+
+## 2026-02-11 - US-AI-009
+- Created comprehensive E2E integration test (tests/test_e2e_integration.py) with 15 test cases
+- FakeMCPClient class simulates MCP PPT Server responses (analyze_template, create_presentation, add_slide, fill_slide_batch, save_presentation, validate_slide)
+- Full LangGraph workflow test: planner → retriever → web_searcher → synthesizer → ppt_builder → validator → done
+- SSE endpoint test: POST /generate-report streams thinking/slide/done events with correct data
+- Validator retry loop test: simulates EMPTY_REQUIRED failure → retry_retriever → pass on second attempt
+- Docker-compose configuration validation: services, ports, volumes, depends_on, env vars
+- Dockerfile validation: both ai-service and mcp-ppt-server use correct base images and CMD
+- State propagation test: verifies template_config, slide_plans, slide_fills, output_path flow through all nodes
+- Download endpoint test: serves generated .pptx files, returns 404 for missing files
+- Error handling test: SSE stream emits error event on workflow failure
+- All 118 ai-service tests pass (15 new + 103 existing), 99 mcp-ppt-server tests pass, ruff clean
+- Files changed: ai-service/tests/test_e2e_integration.py
+- **Learnings for future iterations:**
+  - FakeMCPClient pattern: implement __aenter__/__aexit__ + call_tool dispatch for clean MCP mocking
+  - LLM mock with call counter: track invocation count to return different outputs (planner vs synthesizer)
+  - _parse_sse_events helper: parse SSE text by splitting on newlines, matching event:/data: prefixes
+  - TestClient from fastapi.testclient handles SSE responses synchronously — full body returned at once
+  - Validator retry test: use subclass of FakeMCPClient to override validate_slide behavior with call counter
+  - Pre-existing test_llm.py failures are SOCKS proxy related, not code issues — ignore in CI
+---
+
+## 2026-02-11 - US-DB-001
+- Created 4 new migration SQL files (002-005), verified existing 001_enable_pgvector.sql
+- 002_create_documents.sql: documents table with UUID PK, filename, storage_path, parsed_status (CHECK constraint: pending/parsing/completed/failed), created_at, status index
+- 003_create_reports.sql: reports table with UUID PK, session_id (UUID), prompt, slides_json (JSONB), file_path, created_at, session_id index
+- 004_create_sessions.sql: sessions table with UUID PK, title, created_at; adds FK from reports.session_id → sessions.id with CASCADE delete
+- 005_create_api_settings.sql: api_settings table with UUID PK, unique key, value, is_secret (boolean), updated_at; auto-update trigger for updated_at
+- Created tests/test_migrations.py with 30 test cases: file existence (5), schema validation per migration (3+4+5+4+5), ordering/dependency checks (4)
+- All 148 ai-service tests pass (30 new + 118 existing), 99 mcp-ppt-server tests pass, ruff clean
+- Files changed: ai-service/migrations/002_create_documents.sql, ai-service/migrations/003_create_reports.sql, ai-service/migrations/004_create_sessions.sql, ai-service/migrations/005_create_api_settings.sql, ai-service/tests/test_migrations.py
+- **Learnings for future iterations:**
+  - document_chunks.document_id is TEXT (from 001), documents.id is UUID — no FK constraint added to avoid type mismatch; link is logical
+  - Migration ordering matters for FK: reports (003) must exist before sessions (004) adds FK via ALTER TABLE
+  - api_settings uses TRIGGER for auto-updating updated_at — cleaner than application-level logic
+  - parsed_status CHECK constraint enforces valid states at DB level — prevents invalid data from any client
+  - gen_random_uuid() is built into PostgreSQL 13+ (no extension needed) — preferred over uuid_generate_v4() which requires uuid-ossp extension
+---
+
+## 2026-02-11 - US-FE-001
+- Initialized Next.js 14 App Router project with TypeScript, Tailwind CSS 3.4, and shadcn/ui utility pattern
+- Updated package.json: replaced incorrect @shadcn/ui dep with proper utilities (class-variance-authority, clsx, tailwind-merge, lucide-react)
+- Created config files: tsconfig.json, tailwind.config.js, postcss.config.js, next.config.js (standalone output), .eslintrc.json
+- Implemented Split View layout in app/page.tsx: 30% sidebar (lg:w-[30%]) + 70% chat panel (flex-1)
+- Sidebar contains 3 zones: SlideList (top, scrollable), SlideEditor (middle, scrollable), DownloadBar (bottom, fixed)
+- ChatPanel: message list area + input with send button, disabled state when empty
+- Responsive design: sidebar is slide-over on mobile (<lg), with overlay backdrop and close button; hamburger menu in mobile header
+- Created Dockerfile: multi-stage node:20-alpine build (deps → builder → runner) with standalone output for minimal image
+- Created lib/utils.ts with cn() utility (clsx + tailwind-merge)
+- CSS variables in globals.css for MBB Blue palette theming
+- Build passes clean, lint passes clean, 99 mcp-ppt-server tests + 148 ai-service tests still pass
+- Files changed: frontend/package.json, frontend/next.config.js, frontend/tsconfig.json, frontend/tailwind.config.js, frontend/postcss.config.js, frontend/.eslintrc.json, frontend/next-env.d.ts, frontend/Dockerfile, frontend/app/globals.css, frontend/app/layout.tsx, frontend/app/page.tsx, frontend/lib/utils.ts, frontend/components/sidebar/SlideList.tsx, frontend/components/sidebar/SlideEditor.tsx, frontend/components/sidebar/DownloadBar.tsx, frontend/components/chat/ChatPanel.tsx
+- **Learnings for future iterations:**
+  - @shadcn/ui is NOT an npm package — it's a CLI that copies component source code; use class-variance-authority + clsx + tailwind-merge + lucide-react as the actual deps
+  - Next.js `output: "standalone"` in next.config.js produces a minimal server.js for Docker — COPY .next/standalone + .next/static + public
+  - Tailwind CSS content paths must include both app/ and components/ directories
+  - next-env.d.ts is auto-generated by Next.js build — don't manually edit, it gets overwritten
+  - lg: breakpoint (1024px) is good for sidebar toggle — matches typical tablet/desktop split
+---
+
+## 2026-02-11 - US-FE-002
+- Implemented hooks/useSSE.ts: custom React hook for SSE connection via fetch + ReadableStream
+  - POST /generate-report, parses event:/data: lines from SSE stream
+  - Manages SSEState: status (idle/streaming/done/error), thinkingLogs, slideInfo, result, error
+  - AbortController for cancellation, reset() for clearing state
+- Implemented components/chat/ThinkingStream.tsx: renders thinking event logs with step-specific icons
+  - Auto-scrolls to bottom on new logs via useRef + scrollIntoView
+  - Step icons: planner 📋, retriever 🔍, web_searcher 🌐, synthesizer ✍️, ppt_builder 📊, validator ✅, fallback ⚠️
+- Updated components/chat/ChatPanel.tsx: full chat interface with SSE integration
+  - Message list with user (right-aligned, primary bg) and assistant (left-aligned, muted bg) bubbles
+  - Live ThinkingStream during streaming with pulse indicator
+  - Completed assistant messages have collapsible thinking process (details/summary)
+  - Enter key sends, input disabled during streaming, button shows "生成中" while streaming
+  - prevStatusRef tracks streaming→done/error transitions to finalize assistant messages
+- Updated components/sidebar/DownloadBar.tsx: accepts result prop, activates when done event received
+  - Shows slide count in button text when ready, opens download URL in new tab
+- Updated app/page.tsx: wires useSSE hook, passes sseState to ChatPanel and result to DownloadBar
+- Build + lint pass clean, 99 mcp-ppt-server tests + 148 ai-service tests pass
+- Files changed: frontend/hooks/useSSE.ts, frontend/components/chat/ThinkingStream.tsx, frontend/components/chat/ChatPanel.tsx, frontend/components/sidebar/DownloadBar.tsx, frontend/app/page.tsx
+- **Learnings for future iterations:**
+  - SSE via fetch + ReadableStream is more flexible than EventSource (supports POST, custom headers)
+  - SSE line parsing: buffer incomplete lines, split on \n, match event:/data: prefixes
+  - useRef for prevStatus tracking avoids stale closure issues in useEffect
+  - ThinkingStream auto-scroll: useRef on a sentinel div at bottom + scrollIntoView({behavior: "smooth"})
+  - DownloadBar activation: pass DoneEvent result prop from parent, check !!result?.filename for readiness
+  - ChatPanel props pattern: pass sseState (read-only) + onGenerate callback from parent page
+---
+
+## 2026-02-11 - US-FE-003
+- Implemented SlideList component: shows slides with index badge, layout name, and action title summary; click to select with highlight styling
+- Implemented SlideEditor component: fetches slide content via backend API on selection, renders text fields as Input (short) or Textarea (long), chart/table as read-only status indicators, "保存修改" button saves changed fields via fill_text then re-saves presentation, toast notification on success/failure
+- Created backend API routes (ai-service/app/api/routes/slides.py):
+  - GET /slides/{presentation_id} — lists all slides content
+  - GET /slides/{presentation_id}/{slide_index} — single slide content
+  - PUT /slides/field — update a text field via MCP fill_text
+  - POST /slides/save — re-save presentation after edits
+- Updated generate.py done SSE event to include presentation_id and slide summaries (index, layout, title) for frontend consumption
+- Updated useSSE.ts DoneEvent type with presentation_id and slides fields
+- Created lib/api.ts with fetchSlideContent, updateField, savePresentation helpers
+- Updated page.tsx: added selectedSlide state, passes slides/selectedIndex/onSelect to SlideList, passes presentationId/slideIndex to SlideEditor
+- Created tests/test_slides.py with 8 test cases covering all endpoints + error paths + route registration
+- All 156 ai-service tests pass (8 new + 148 existing), 99 mcp-ppt-server tests pass, frontend build + lint clean
+- Files changed: ai-service/app/api/routes/slides.py, ai-service/app/api/routes/generate.py, ai-service/app/main.py, ai-service/tests/test_slides.py, frontend/app/page.tsx, frontend/hooks/useSSE.ts, frontend/lib/api.ts, frontend/components/sidebar/SlideList.tsx, frontend/components/sidebar/SlideEditor.tsx
+- **Learnings for future iterations:**
+  - Backend slides API proxies to MCP server via MCPPPTClient — each request opens a new connection (stateless)
+  - DoneEvent from SSE should include presentation_id so frontend can call slides API without extra state
+  - Slide summaries (index, layout, title) in done event avoid an extra API call for the slide list
+  - SlideEditor uses useEffect cleanup (cancelled flag) to prevent stale state updates on rapid slide switching
+  - Text field length > 40 chars triggers textarea rendering for better UX
+  - Chart/table shapes are read-only in the editor — only text fields are editable via fill_text
+- Browser file download: use fetch + blob + URL.createObjectURL + anchor.download for custom filenames (window.open doesn't control filename)
+---
+
+## 2026-02-11 - US-FE-004
+- Updated DownloadBar to use fetch + blob + anchor tag for proper browser file download (instead of window.open)
+- Added buildDownloadFilename() helper: sanitizes user prompt into safe filename (strips invalid chars, truncates to 80 chars, appends .pptx)
+- Added reportTitle prop to DownloadBar, passed from page.tsx via lastPrompt state
+- Added downloading state: button disabled and shows "下载中..." during fetch, re-enabled on completion
+- Fallback to window.open if fetch-based download fails (e.g., CORS issues)
+- Updated page.tsx: added lastPrompt state, handleGenerate callback wraps sse.generate to capture prompt
+- Files changed: frontend/components/sidebar/DownloadBar.tsx, frontend/app/page.tsx
+- **Learnings for future iterations:**
+  - fetch + blob + URL.createObjectURL + anchor.download is the reliable way to trigger browser file downloads with custom filenames
+  - window.open for .pptx files may open in new tab instead of downloading depending on browser/server headers
+  - Filename sanitization: strip \/:*?"<>| characters for cross-platform safety, truncate to reasonable length
+  - useCallback with sse.generate dependency needs eslint-disable for react-hooks/exhaustive-deps (sse object reference changes)
+---
+
+## 2026-02-11 - US-FE-005
+- Implemented backend GET/PUT /api/settings endpoints (ai-service/app/api/routes/settings.py)
+  - GET /api/settings: reads all settings from Supabase api_settings table, masks secret values (shows only last 4 chars)
+  - PUT /api/settings: upserts settings with SETTINGS_SCHEMA validation, skips masked values (unchanged secrets) and unknown keys
+  - SETTINGS_SCHEMA defines 8 keys with is_secret flags: llm_base_url, llm_api_key, llm_model, llm_model_fast, brave_search_api_key, supabase_url, supabase_service_role_key, llama_cloud_api_key
+- Implemented frontend /settings page (frontend/app/settings/page.tsx)
+  - Form with 8 fields matching SETTINGS_SCHEMA, password input type for secret fields
+  - Loads settings on mount via GET /api/settings, shows masked values for secrets
+  - Save button calls PUT /api/settings, skips unchanged masked secrets, reloads fresh masked values after save
+  - Toast notification on save success/failure (same pattern as SlideEditor)
+  - "返回首页" link to navigate back to main page
+- Added settings gear icon to sidebar header in page.tsx (links to /settings)
+- Added fetchSettings() and saveSettings() to frontend/lib/api.ts
+- Registered settings router in ai-service/app/main.py
+- Created tests/test_settings.py with 10 test cases: get empty, get with data, mask short secret, put updates, put skips masked, put skips unknown keys, put secret flag, get error handling, put error handling, routes registered
+- All 166 ai-service tests pass (10 new + 156 existing), frontend build + lint clean
+- Files changed: ai-service/app/api/routes/settings.py, ai-service/app/main.py, ai-service/tests/test_settings.py, frontend/app/settings/page.tsx, frontend/app/page.tsx, frontend/lib/api.ts
+- **Learnings for future iterations:**
+  - Supabase upsert with on_conflict="key" handles insert-or-update in one call — no need for separate insert/update logic
+  - Secret masking: show only last 4 chars, fully mask if value <= 4 chars — detect unchanged secrets by checking for "****" in submitted value
+  - Next.js App Router file-based routing: create app/settings/page.tsx for /settings route — no router config needed
+  - Settings form pattern: load masked values on mount, track originalMasked state, only send changed values on save, reload after save for fresh masks
+  - Password input type for secret fields prevents shoulder surfing but still allows editing — user clears and types new value to update
+---
+
+## 2026-02-11 - US-FE-006
+- Created tests/test_fullstack_integration.py with 81 test cases across 12 test classes
+- TestDockerCompose (10 tests): validates 3 services, ports (8000/8001/3000), shared ppt-output volume, depends_on chain, env vars (MCP_PPT_SERVER_URL, NEXT_PUBLIC_API_URL), env_file, restart policy, templates mount
+- TestDockerfiles (4 tests): validates all 3 Dockerfiles (python:3.12-slim for backends, node:20-alpine multi-stage for frontend), standalone output config
+- TestFrontendLayout (6 tests): validates Split View (aside 30% + main), sidebar components (SlideList, SlideEditor, DownloadBar), ChatPanel, responsive mobile sidebar, settings link
+- TestSSEIntegration (9 tests): validates useSSE hook (NEXT_PUBLIC_API_URL, POST /generate-report, all 4 event types, presentation_id, slides, AbortController)
+- TestChatPanel (6 tests): validates message list, ThinkingStream, Enter to send, disabled during streaming, step icons for all 6 workflow nodes, collapsible thinking
+- TestSlideListEditor (7 tests): validates slide rendering (index/layout/title), selection, content fetch, text fields editable, chart/table readonly, save button, toast
+- TestDownloadBar (5 tests): validates disabled state, fetch+blob download, custom filename, /downloads/ endpoint, downloading state
+- TestSettingsPage (7 tests): validates all 8 settings fields, password type for secrets, fetch/save API, masked secret handling, toast, back link
+- TestAPIContract (10 tests): validates all endpoint paths and request/response contracts match between frontend and backend
+- TestFullStackWiring (7 tests): validates page.tsx wires useSSE to ChatPanel, DownloadBar, SlideList, SlideEditor with correct props
+- TestBackendRouteRegistration (6 tests): validates all 4 routers registered, CORS enabled, health check
+- TestEnvironmentConfig (4 tests): validates .env.example has all required variables
+- All 81 tests pass, frontend build + lint clean, 99 mcp-ppt-server tests + 166 ai-service tests pass
+- Files changed: tests/test_fullstack_integration.py
+- **Learnings for future iterations:**
+  - Full-stack integration tests can validate configuration and code contracts without Docker daemon
+  - Dockerfile CMD in JSON array format splits arguments — test for individual tokens not joined strings
+  - Testing API contract compatibility by checking both frontend and backend source for matching endpoint paths/fields catches drift early
+  - Root-level tests/ directory works well for cross-service integration tests that span the monorepo
+---
