@@ -84,7 +84,7 @@
         "验证: reset() 后所有节点属性恢复到初始状态"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

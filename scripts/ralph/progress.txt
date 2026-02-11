@@ -5,6 +5,11 @@
 - CORS configured for `http://localhost:5173` (Vite dev server)
 - Use `pydantic>=2.0` syntax (BaseModel, no `class Config`)
 - ActionRegistry in `backend/app/engine/action_registry.py`: use `@register_action` decorator, `ActionContext`/`ActionResult` dataclasses
+- OntologyEngine in `backend/app/engine/graph_engine.py`: `load_workspace(schema_dict, action_module)` → builds graph + registers actions; `execute_action(action_id, node_id)` → runs direct effect + ripple rules
+- DSL parsing: `<-[EDGE_TYPE]- NodeType` = incoming, `-[EDGE_TYPE]-> NodeType` = outgoing; extract edge_type between `[]`, node_type after `]` stripping `->/- ` chars
+- `_eval_condition` uses restricted `eval` with `source`/`target` dicts; returns False on any exception
+- `_generate_insight` uses `format_map({"source": ..., "target": ...})` to fill insight templates
+- `reset()` deep-copies from `initial_snapshot` saved at load time
 - Tests go in `backend/tests/`, run with `python -m pytest tests/ -v` from `backend/`
 - Action functions in `backend/app/actions/action_functions.py`: all use `(ctx: ActionContext) -> ActionResult` signature, read from `ctx.target_node`/`ctx.params`, return old values in `ActionResult.old_values`
 - Use `pytest.approx` for float comparisons in tests
@@ -57,4 +62,27 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - Floating point precision: use `pytest.approx` for float comparisons in tests
   - Functions read from `ctx.target_node` (dict of node properties) and `ctx.params` (action parameters)
   - Functions return old values in `ActionResult.old_values` for undo/reset capability
+---
+
+## 2026-02-11 - US-BE-004
+- What was implemented: OntologyEngine core engine in engine/graph_engine.py
+  - `load_workspace(schema, action_module)`: parses graph_data → NetworkX DiGraph, saves initial_snapshot, registers action functions
+  - `execute_action(action_id, target_node_id)`: applies direct_effect, processes ripple_rules, returns structured results
+  - `_process_ripple_rule`: parses Cypher-style DSL paths, filters by edge_type/node_type, evaluates conditions, applies secondary effects
+  - `_parse_propagation_path`: handles both `<-[TYPE]- Node` (incoming) and `-[TYPE]-> Node` (outgoing) DSL formats
+  - `_apply_secondary_effect`: looks up registered function, builds ActionContext, executes, writes results back to graph
+  - `_generate_insight`: fills insight templates with source/target node attributes via format_map
+  - `get_graph_for_render()`: exports graph in frontend-friendly format
+  - `get_available_actions(node_id)`: filters actions by node type
+  - `reset()`: deep-copies initial_snapshot back to all nodes
+- Files changed:
+  - backend/app/engine/graph_engine.py (OntologyEngine class, ~280 lines)
+  - backend/tests/test_graph_engine.py (39 tests covering load, DSL, execute, reset, render, actions, conditions)
+- **Learnings for future iterations:**
+  - DSL parser: outgoing path `-> ` uses different separator than incoming `- `; parse by stripping chars after `]` instead of splitting on a fixed separator
+  - `_find_action` handles both dict and Pydantic model forms (schema may come from JSON dict or Pydantic)
+  - `get_available_actions` also needs to handle both dict and Pydantic model forms for action objects
+  - `format_map` with `{"source": dict, "target": dict}` allows templates like `{target[name]}` to reference nested properties
+  - `eval` for conditions uses `{"__builtins__": {}}` for minimal safety; conditions reference `source`/`target` dicts
+  - Full test suite: 71 tests (32 previous + 39 new), all passing
 ---
