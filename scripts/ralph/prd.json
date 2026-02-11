@@ -100,7 +100,7 @@
         "验证: 执行两次 simulate 后, get_history() 返回 2 条记录, 每条包含完整的 ripple_path 和 insights"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
