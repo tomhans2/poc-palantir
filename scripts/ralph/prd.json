@@ -349,7 +349,7 @@
         "验证: 动画结束后受影响节点保持新的视觉状态"
       ],
       "priority": 17,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

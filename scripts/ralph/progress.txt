@@ -378,5 +378,32 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - antd Card `styles` prop (not `headStyle`/`bodyStyle`) controls internal section padding in antd v6
   - Click-to-highlight requires looking up node type from `graphData.nodes` since InsightItem only has `target_node` (id), not type
   - CSS `@keyframes` animation name must match the string used in inline `animation` style property
+- Ripple animation pattern: `useSimulation` dispatches `SIMULATE_RESPONSE_RECEIVED` → `pendingSimulation` stored in state → `GraphCanvas` useEffect plays async animation → dispatches `SIMULATE_DONE` when complete
+- G6 v5 custom states for animation: define in `node.state` / `edge.state` config object (e.g., `rippleActive`, `rippleVisited`, `rippleDimmed`), apply via `graph.setElementState(stateMap)`
+- Use `useRef` (not state) for animation flags (`animatingRef`) since async animation spans multiple event loop ticks
+  - Frontend build passes; backend tests (174) still passing — no backend changes in this story
+---
+
+## 2026-02-12 - US-FE-007
+- What was implemented: Ripple propagation animation on the graph canvas after simulation
+  - New `PendingSimulation` state field in `WorkspaceState` + `SIMULATE_RESPONSE_RECEIVED` reducer action — decouples API response from animation completion
+  - `useSimulation` now dispatches `SIMULATE_RESPONSE_RECEIVED` (not `SIMULATE_DONE`) so GraphCanvas can intercept and animate before finalizing
+  - `GraphCanvas` watches `state.pendingSimulation` and triggers async `playRippleAnimation` when set
+  - Animation flow: dim non-ripple nodes → iterate `ripple_path` with 500ms delays → each step: current node gets `rippleActive` state (enlarged, orange halo), visited nodes get `rippleVisited` (red stroke), edges along path get `rippleHighlight` (red) → final pause → dispatch `SIMULATE_DONE`
+  - New G6 node states: `rippleActive` (enlarged + orange halo), `rippleVisited` (red stroke + halo), `rippleDimmed` (low opacity)
+  - New G6 edge states: `rippleHighlight` (red, thicker), `rippleDimmed` (low opacity)
+  - `animatingRef` boolean prevents node/canvas click handlers from firing during animation
+  - `findHighlightEdgeIds` helper maps backend `highlight_edges` (source/target) to G6 edge IDs
+  - `isSimulating` remains `true` throughout animation (buttons stay disabled in ControlPanel)
+- Files changed:
+  - frontend/src/components/GraphCanvas/index.tsx (major rewrite: +240 lines for animation logic, ripple states, edge matching)
+  - frontend/src/hooks/useWorkspace.ts (added PendingSimulation interface, SIMULATE_RESPONSE_RECEIVED action, pendingSimulation state field)
+  - frontend/src/hooks/useSimulation.ts (changed SIMULATE_DONE → SIMULATE_RESPONSE_RECEIVED dispatch)
+- **Learnings for future iterations:**
+  - Decoupling API response from UI completion via an intermediate state (`pendingSimulation`) allows GraphCanvas to own the animation lifecycle without coupling to the simulation hook
+  - G6 v5 `setElementState` with a full state map is efficient for batch updates — calling it once per animation step (not per element) is the right pattern
+  - `animatingRef` (not state) is needed because the async animation function runs across multiple event loop ticks; React state would cause re-renders that restart effects
+  - The `useEffect` watching `pendingSimulation` fires the animation; the animation itself dispatches `SIMULATE_DONE` when complete — this is a controlled async side effect pattern
+  - Edge matching between backend `highlight_edges` and G6 edge IDs requires bidirectional comparison since edge direction in G6 data may differ from the backend's propagation direction
   - Frontend build passes; backend tests (174) still passing — no backend changes in this story
 ---
