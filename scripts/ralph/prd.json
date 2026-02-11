@@ -309,7 +309,7 @@
         "验证: 图例显示所有节点类型的颜色和中文标签"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

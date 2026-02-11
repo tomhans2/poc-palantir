@@ -340,3 +340,20 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - Use `useRef` pattern for dispatch/state to avoid re-creating Graph instance on every state change
   - Backend tests (174) still passing — no backend changes in this story
 ---
+
+## 2026-02-12 - US-FE-005
+- What was implemented: ControlPanel dynamic control panel with three sections
+  - Node Properties Card: displays selected node's type tag, id tag, and all properties via Ant Design Descriptions (bordered, single-column); shows Empty placeholder when no node selected
+  - Action Buttons: filters actions by `target_node_type === selectedNodeType`; renders `display_name` as primary block Button; wired to `useSimulation().onSimulate(action_id)`; disabled + loading during simulation
+  - Legend: iterates `ontologyDef.node_types` to render color dots + Chinese labels
+  - Sections separated by Divider; actions/legend sections only render when data is available
+- Files changed:
+  - frontend/src/components/ControlPanel/index.tsx (replaced placeholder with full implementation, ~160 lines)
+- **Learnings for future iterations:**
+  - `useSimulation()` hook returns `{ onSimulate, isSimulating }` — call `onSimulate(actionId)` directly, it reads `selectedNodeId` from state internally
+  - Actions are filtered by `target_node_type` matching `selectedNodeType` from workspace state — no additional API call needed
+  - `graphData.nodes` contains all node data with properties — find selected node via `nodes.find(n => n.id === selectedNodeId)`
+  - Ant Design `Descriptions` with `column={1} size="small" bordered` works well for key-value property display in a narrow panel
+  - Frontend build passes; chunk size warning for antd+G6 is expected and harmless
+  - Backend tests (174) still passing — no backend changes in this story
+---
