@@ -18,6 +18,11 @@
 - Module-level `engine` singleton in routes.py; tests reset it via `autouse` fixture accessing `from app.api.routes import engine`
 - `/load` accepts `UploadFile` via multipart/form-data; validates with `WorkspaceConfig(**data)` before loading
 - Use `FastAPI TestClient` (from `fastapi.testclient`) + `io.BytesIO` for file upload tests
+- Samples directory: `backend/samples/`, resolved via `pathlib` relative to routes.py (`Path(__file__).resolve().parent.parent.parent / "samples"`)
+- `/load` now returns `registered_functions` (list of action names) and `warnings` (list of unregistered function warnings) in response
+- `/load` accepts `?sample=name` query param to load built-in samples from `backend/samples/{name}.json`
+- `GET /samples` lists available sample JSON files with name + description
+- Pydantic validation errors return HTTP 422 with `exc.errors()` detail (list of dicts with `loc`, `msg`, `type`)
 
 # Ralph Progress Log
 Started: 2026年 2月11日 星期三 22时17分10秒 CST
@@ -127,4 +132,25 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - `response_model=SimulateResponse` on the simulate endpoint enforces output schema
   - autouse fixture resets engine state before each test to avoid cross-test pollution
   - Full test suite: 100 tests (83 previous + 17 new), all passing
+---
+
+## 2026-02-11 - US-CORE-001
+- What was implemented: Complete knowledge graph loading pipeline (JSON parse → Pydantic validation → graph build → function injection)
+  - `GET /api/v1/workspace/samples`: returns list of available sample JSON files with name + description
+  - `POST /load` enhanced to support `?sample=corporate_acquisition` query param for built-in sample loading
+  - Pydantic validation errors now return HTTP 422 with field-level error details (not 400)
+  - Function name validation: after loading, checks all `action_to_trigger` references against ActionRegistry; returns warnings for unregistered functions
+  - Response now includes `registered_functions` (sorted list of action names) and `warnings` (list of unregistered function warnings)
+  - Idempotent: `load_workspace` clears graph + rebuilds action_registry each time
+  - `backend/samples/corporate_acquisition.json`: built-in sample data file
+- Files changed:
+  - backend/app/api/routes.py (added GET /samples, enhanced POST /load with sample loading, 422 validation, function warnings, registered_functions)
+  - backend/tests/test_routes.py (added 10 new tests: samples list, sample loading, 422 validation, function warnings, registered_functions, idempotency)
+  - backend/samples/corporate_acquisition.json (new: built-in sample data)
+- **Learnings for future iterations:**
+  - `SAMPLES_DIR` resolved via `Path(__file__).resolve().parent.parent.parent / "samples"` — 3 levels up from routes.py to backend/
+  - Use `pydantic.ValidationError` (not generic Exception) to catch Pydantic errors and get `.errors()` list
+  - `_check_unregistered_functions` runs AFTER `load_workspace` so the registry is populated before checking
+  - Sample loading uses query params (`?sample=name`), not JSON body, to avoid conflict with multipart/form-data file upload
+  - Full test suite: 110 tests (100 previous + 10 new), all passing
 ---

@@ -146,7 +146,7 @@
         "验证: 连续两次 /load 后, 第二次加载的是全新工作区 (不受第一次状态影响)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "这是系统的核心入口。JSON 加载 + Action 函数注入构成了 Palantir '知识图谱到智能' 的基础链路。"
     },
     {
