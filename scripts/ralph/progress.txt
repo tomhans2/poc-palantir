@@ -1,3 +1,27 @@
+## Codebase Patterns
+- Backend root: `backend/`, FastAPI app at `backend/app/main.py`
+- All Pydantic models in `backend/app/models/`, import via `from app.models import ...`
+- Run backend commands from `backend/` directory (uvicorn uses `app.main:app`)
+- CORS configured for `http://localhost:5173` (Vite dev server)
+- Use `pydantic>=2.0` syntax (BaseModel, no `class Config`)
+
 # Ralph Progress Log
 Started: 2026年 2月11日 星期三 22时17分10秒 CST
+---
+
+## 2026-02-11 22:20 - US-BE-001
+- What was implemented: Backend project skeleton with FastAPI app and all Pydantic data models
+- Files changed:
+  - backend/app/main.py (FastAPI app, CORS, health check)
+  - backend/app/models/ontology.py (NodeTypeDef, EdgeTypeDef, OntologyDef)
+  - backend/app/models/graph.py (GraphNode, GraphEdge, GraphData)
+  - backend/app/models/action.py (DirectEffect, EffectOnTarget, RippleRule, Action, ActionEngine)
+  - backend/app/models/workspace.py (Metadata, WorkspaceConfig)
+  - backend/app/models/api.py (SimulateRequest, InsightItem, DeltaGraph, SimulateResponse)
+  - backend/requirements.txt
+  - .gitignore
+- **Learnings for future iterations:**
+  - All dependencies already installed in conda env, no virtualenv needed
+  - RippleRule has `insight_type` and `insight_severity` as direct fields (not nested)
+  - Models __init__.py re-exports all models for convenient import
 ---

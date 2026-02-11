@@ -20,7 +20,7 @@
         "验证: uvicorn app.main:app 启动成功, GET /health 返回 200"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
