@@ -394,7 +394,7 @@
         "验证: docker-compose down 后清理干净, 再次 up 无残留状态"
       ],
       "priority": 19,
-      "passes": false,
+      "passes": true,
       "notes": "Docker 部署是可选的生产级部署方式, 但对演示非常有价值 — 一键启动, 无环境依赖。"
     },
     {

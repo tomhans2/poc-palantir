@@ -49,6 +49,9 @@
 - Dynamic module loading: use `importlib.util.spec_from_file_location` + `module_from_spec` + `exec_module` to load .py files at runtime
 - FastAPI startup logging: use `lifespan` async context manager (not deprecated `@app.on_event`); log to `logging.getLogger("uvicorn.error")` for visibility
 - Project docs: root README.md, backend/README.md, frontend/README.md; start.sh one-click launcher in project root
+- Docker: backend/Dockerfile (python:3.11-slim), frontend/Dockerfile (node:20-alpine build + nginx:alpine serve), docker-compose.yml at project root
+- Docker nginx: frontend/nginx.conf proxies /api/ to `backend:8000` (Docker service name), all other routes → SPA fallback
+- Docker CORS: backend allows both `localhost:5173` (dev) and `localhost:3000` (Docker) origins
 
 # Ralph Progress Log
 Started: 2026年 2月11日 星期三 22时17分10秒 CST
@@ -429,5 +432,32 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - Use `logging.getLogger("uvicorn.error")` to log at the uvicorn logger level (visible in standard uvicorn output)
   - `start.sh` uses `trap cleanup SIGINT SIGTERM` to ensure both background processes are killed on Ctrl+C
   - Frontend chunk size warning for antd+G6 is expected and harmless
+  - Backend tests (174) all passing; frontend build (tsc + vite) successful
+---
+
+## 2026-02-12 - US-DEPLOY-002
+- What was implemented: Docker Compose containerized deployment
+  - `backend/Dockerfile`: python:3.11-slim base, pip install requirements, copy app/ + samples/, CMD uvicorn on port 8000
+  - `frontend/Dockerfile`: multi-stage build — stage 1 node:20-alpine npm ci + npm run build, stage 2 nginx:alpine serves dist/ with custom nginx.conf
+  - `frontend/nginx.conf`: reverse proxy /api/, /health, /docs, /openapi.json to backend:8000; SPA fallback (try_files → index.html) for all other routes
+  - `docker-compose.yml`: backend (port 8000) + frontend (port 3000) services; frontend depends_on backend with healthcheck; samples/ volume mount for runtime data; .env support for custom ports (FRONTEND_PORT, BACKEND_PORT)
+  - `backend/.dockerignore` + `frontend/.dockerignore`: exclude __pycache__, node_modules, .git, tests, etc.
+  - Updated backend CORS to also allow `http://localhost:3000` (Docker frontend port)
+  - Updated root README.md: added Docker Compose deployment section (方式三), tech stack table entry, directory structure entries for Docker files
+- Files changed:
+  - backend/Dockerfile (new)
+  - backend/.dockerignore (new)
+  - frontend/Dockerfile (new)
+  - frontend/.dockerignore (new)
+  - frontend/nginx.conf (new)
+  - docker-compose.yml (new)
+  - backend/app/main.py (CORS origins updated)
+  - README.md (Docker docs, tech stack, directory structure)
+- **Learnings for future iterations:**
+  - Docker healthcheck for FastAPI: use `python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"` since curl may not be in python:3.11-slim
+  - nginx reverse proxy to Docker service: use service name `backend` (not localhost) as the hostname — Docker Compose creates an internal network
+  - Multi-stage frontend build: stage 1 does `npm ci` (not `npm install`) for deterministic builds; stage 2 copies only `dist/` to keep image small
+  - CORS must include Docker frontend origin (port 3000) in addition to Vite dev server (5173)
+  - `docker-compose.yml` uses `${VAR:-default}` syntax for .env variable substitution with defaults
   - Backend tests (174) all passing; frontend build (tsc + vite) successful
 ---
