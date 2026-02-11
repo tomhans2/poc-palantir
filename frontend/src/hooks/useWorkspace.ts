@@ -18,6 +18,12 @@ export interface SimulationHistoryEntry {
   ripplePath: string[];
 }
 
+export interface PendingSimulation {
+  response: SimulateResponse;
+  actionId: string;
+  displayName: string;
+}
+
 export interface WorkspaceState {
   metadata: Metadata | null;
   ontologyDef: OntologyDef | null;
@@ -28,6 +34,7 @@ export interface WorkspaceState {
   insights: InsightItem[];
   isSimulating: boolean;
   simulationHistory: SimulationHistoryEntry[];
+  pendingSimulation: PendingSimulation | null;
 }
 
 export const initialState: WorkspaceState = {
@@ -40,6 +47,7 @@ export const initialState: WorkspaceState = {
   insights: [],
   isSimulating: false,
   simulationHistory: [],
+  pendingSimulation: null,
 };
 
 // ---- Actions ----
@@ -60,6 +68,14 @@ export type WorkspaceAction =
     }
   | { type: 'DESELECT_NODE' }
   | { type: 'SIMULATE_START' }
+  | {
+      type: 'SIMULATE_RESPONSE_RECEIVED';
+      payload: {
+        response: SimulateResponse;
+        actionId: string;
+        displayName: string;
+      };
+    }
   | {
       type: 'SIMULATE_DONE';
       payload: {
@@ -106,6 +122,15 @@ export function workspaceReducer(
         isSimulating: true,
       };
 
+    case 'SIMULATE_RESPONSE_RECEIVED': {
+      const { response, actionId, displayName } = action.payload;
+      return {
+        ...state,
+        isSimulating: true,
+        pendingSimulation: { response, actionId, displayName },
+      };
+    }
+
     case 'SIMULATE_DONE': {
       const { response, actionId, displayName } = action.payload;
       const entry: SimulationHistoryEntry = {
@@ -118,6 +143,7 @@ export function workspaceReducer(
       return {
         ...state,
         isSimulating: false,
+        pendingSimulation: null,
         insights: [...state.insights, ...response.insights],
         simulationHistory: [...state.simulationHistory, entry],
       };
@@ -131,6 +157,7 @@ export function workspaceReducer(
         insights: [],
         isSimulating: false,
         simulationHistory: [],
+        pendingSimulation: null,
       };
 
     default:

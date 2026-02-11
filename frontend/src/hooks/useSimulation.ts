@@ -16,8 +16,9 @@ export function useSimulation() {
       dispatch({ type: 'SIMULATE_START' });
       try {
         const response = await simulate(actionId, selectedNodeId);
+        // Store response for animation; GraphCanvas will dispatch SIMULATE_DONE after animation
         dispatch({
-          type: 'SIMULATE_DONE',
+          type: 'SIMULATE_RESPONSE_RECEIVED',
           payload: { response, actionId, displayName },
         });
         return response;
