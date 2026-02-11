@@ -357,3 +357,26 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - Frontend build passes; chunk size warning for antd+G6 is expected and harmless
   - Backend tests (174) still passing — no backend changes in this story
 ---
+
+## 2026-02-12 - US-FE-006
+- What was implemented: InsightFeed structured intelligence narrative flow component
+  - Ant Design Timeline inside Card components, grouped by simulation run (from `simulationHistory`)
+  - 5 insight type configs with distinct icons and colors: event_trigger (ThunderboltOutlined/blue), risk_propagation (LinkOutlined/orange), quantitative_impact (CalculatorOutlined/purple), network_analysis (ApartmentOutlined/red), recommendation (BulbOutlined/green)
+  - Severity-based Tag colors: info (blue), warning (orange), critical (red) with Chinese labels
+  - Critical severity insights get red border, red background tint, and CSS pulse animation (`insightPulse` keyframes in App.css)
+  - Each simulation group wrapped in Card with displayName title + timestamp in extra
+  - Click insight → dispatches SELECT_NODE to highlight target_node on graph (finds node type from graphData)
+  - Reverse chronological order (newest simulation group at top)
+  - Empty state with antd Empty component when no simulations have been run
+  - Hover effect on clickable insight items (box-shadow)
+- Files changed:
+  - frontend/src/components/InsightFeed/index.tsx (replaced placeholder with full implementation, ~227 lines)
+  - frontend/src/App.css (added `@keyframes insightPulse` for critical severity animation)
+- **Learnings for future iterations:**
+  - `simulationHistory` from workspace state groups insights by simulation run — use this for Card grouping, not flat `insights` array
+  - antd Timeline `items` prop accepts `dot` for custom icon elements — wrap icon in `<span>` with color styling
+  - antd Card `styles` prop (not `headStyle`/`bodyStyle`) controls internal section padding in antd v6
+  - Click-to-highlight requires looking up node type from `graphData.nodes` since InsightItem only has `target_node` (id), not type
+  - CSS `@keyframes` animation name must match the string used in inline `animation` style property
+  - Frontend build passes; backend tests (174) still passing — no backend changes in this story
+---

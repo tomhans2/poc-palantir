@@ -329,7 +329,7 @@
         "验证: 点击某条洞察后, 图谱中对应节点被高亮"
       ],
       "priority": 16,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
