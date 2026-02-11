@@ -6,6 +6,11 @@
 - Frontend dependencies: react 19, antd 6, @antv/g6 5.x, axios, @ant-design/icons 6
 - Frontend state: `src/hooks/useWorkspace.ts` — WorkspaceContext + useReducer; access via `useWorkspace()` hook; `useSimulation()` wraps simulate API
 - Frontend components: `src/components/` — WorkspaceProvider wraps App in `main.tsx`
+- Frontend layout: `src/components/Layout/AppLayout.tsx` — three-column layout (280px left Sider + flex Content + 320px right Sider) with Header
+- Frontend component structure: ControlPanel (left), GraphCanvas (center), InsightFeed (right), FileUploader (Drawer overlay)
+- antd v6 `Sider` does not accept `theme` prop — use className + CSS `background: #fff` instead
+- FileUploader uses Drawer (not modal) for upload UI; loads via API then dispatches LOAD_WORKSPACE
+- Header pattern: metadata.description as title, action buttons (加载数据 + 重置) on right side
 - Backend root: `backend/`, FastAPI app at `backend/app/main.py`
 - All Pydantic models in `backend/app/models/`, import via `from app.models import ...`
 - Run backend commands from `backend/` directory (uvicorn uses `app.main:app`)
@@ -277,4 +282,30 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - `RESET` only clears selections/insights/history but keeps metadata/ontologyDef/graphData/actions (mirrors backend /reset behavior)
   - `useSimulation` depends on `state.selectedNodeId` — returns early if no node selected
   - Frontend hooks in `src/hooks/`, components in `src/components/`
+---
+
+## 2026-02-11 - US-FE-003
+- What was implemented: Three-column layout shell with Header, FileUploader, and placeholder panels
+  - `AppLayout.tsx`: Ant Design Layout with Header (metadata title + action buttons) + 3-column body (280px left Sider + flex Content + 320px right Sider)
+  - `FileUploader/index.tsx`: Upload.Dragger for JSON file drag-and-drop + Select dropdown for built-in samples (fetched from GET /samples)
+  - `ControlPanel/index.tsx`: Placeholder component for left panel (will be implemented in US-FE-005)
+  - `GraphCanvas/index.tsx`: Placeholder component for center canvas (will be implemented in US-FE-004)
+  - `InsightFeed/index.tsx`: Placeholder component for right panel (will be implemented in US-FE-006)
+  - Header shows metadata.description when workspace loaded, "加载数据" button opens Drawer with FileUploader, "重置" button calls resetWorkspace API + dispatches RESET
+  - Updated index.css for full-viewport layout, App.css for layout-specific styles
+- Files changed:
+  - frontend/src/components/Layout/AppLayout.tsx (new)
+  - frontend/src/components/FileUploader/index.tsx (new)
+  - frontend/src/components/ControlPanel/index.tsx (new)
+  - frontend/src/components/GraphCanvas/index.tsx (new)
+  - frontend/src/components/InsightFeed/index.tsx (new)
+  - frontend/src/App.tsx (replaced with AppLayout render)
+  - frontend/src/App.css (layout styles)
+  - frontend/src/index.css (full-viewport reset)
+- **Learnings for future iterations:**
+  - antd v6 Layout.Sider does not have a `theme` prop — use className + CSS for background color
+  - Use Drawer (not Modal) for file upload overlay — feels more natural for a side panel action
+  - FileUploader fetches samples on mount via useEffect; failure is silently caught (backend may not be running)
+  - Upload.Dragger with `beforeUpload={() => false}` prevents auto-upload; use `onChange` to get the file
+  - Full build (tsc -b + vite build) passes; chunk size warning for antd+G6 is expected
 ---

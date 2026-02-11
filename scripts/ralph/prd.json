@@ -268,7 +268,7 @@
         "验证: 点击 Reset 按钮后界面状态重置"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
