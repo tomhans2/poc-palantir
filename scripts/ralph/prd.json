@@ -121,7 +121,7 @@
         "验证: curl GET /history 返回历史记录列表"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
