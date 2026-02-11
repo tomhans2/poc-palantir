@@ -6,6 +6,8 @@
 - Use `pydantic>=2.0` syntax (BaseModel, no `class Config`)
 - ActionRegistry in `backend/app/engine/action_registry.py`: use `@register_action` decorator, `ActionContext`/`ActionResult` dataclasses
 - Tests go in `backend/tests/`, run with `python -m pytest tests/ -v` from `backend/`
+- Action functions in `backend/app/actions/action_functions.py`: all use `(ctx: ActionContext) -> ActionResult` signature, read from `ctx.target_node`/`ctx.params`, return old values in `ActionResult.old_values`
+- Use `pytest.approx` for float comparisons in tests
 
 # Ralph Progress Log
 Started: 2026年 2月11日 星期三 22时17分10秒 CST
@@ -39,4 +41,20 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - `@register_action` sets `_is_action = True` and `_action_name = func.__name__` on the function object
   - `list_actions()` returns sorted names for deterministic ordering
   - Sandbox mode blocks heredoc-style git commits; use inline `-m` flag instead
+---
+
+## 2026-02-11 - US-BE-003
+- What was implemented: L1/L2/L3 action functions in actions/action_functions.py
+  - L1 Data: `set_property`, `adjust_numeric`, `update_risk_status`
+  - L2 Information: `recalculate_valuation`, `compute_margin_gap`
+  - L3 Intelligence: `graph_weighted_exposure` (sum/max/count aggregation, direction/edge_type filtering)
+- Files changed:
+  - backend/app/actions/action_functions.py (6 action functions, all @register_action decorated)
+  - backend/tests/test_action_functions.py (20 tests covering all functions + registration)
+- **Learnings for future iterations:**
+  - All action functions follow uniform `(ctx: ActionContext) -> ActionResult` signature
+  - `graph_weighted_exposure` uses `graph.in_edges`/`out_edges` with `data=True` to get edge attributes
+  - Floating point precision: use `pytest.approx` for float comparisons in tests
+  - Functions read from `ctx.target_node` (dict of node properties) and `ctx.params` (action parameters)
+  - Functions return old values in `ActionResult.old_values` for undo/reset capability
 ---

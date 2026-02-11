@@ -59,7 +59,7 @@
         "验证: graph_weighted_exposure 在含 3 个节点的测试图上, 正确计算加权总和"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
