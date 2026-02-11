@@ -290,7 +290,7 @@
         "验证: 点击节点后该节点高亮, 点击空白取消高亮"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

@@ -11,6 +11,13 @@
 - antd v6 `Sider` does not accept `theme` prop — use className + CSS `background: #fff` instead
 - FileUploader uses Drawer (not modal) for upload UI; loads via API then dispatches LOAD_WORKSPACE
 - Header pattern: metadata.description as title, action buttons (加载数据 + 重置) on right side
+- G6 v5 GraphCanvas: `src/components/GraphCanvas/index.tsx` — creates `Graph` instance on mount, ref-based lifecycle; data reload via `graph.setData()` + `graph.render()`
+- G6 v5 node/edge styles: use function callbacks `(datum: NodeData) => style` reading from `ontologyDefRef.current` for zero-hardcoded dynamic styling
+- G6 v5 node type mapping: `mapShape()` converts ontology shape strings (circle/diamond/rect) to G6 built-in type names
+- G6 v5 events: `NodeEvent.CLICK` handler receives `IElementEvent` (import as type from `@antv/g6`), access node id via `event.target.id`
+- G6 v5 selection highlight: `graph.setElementState(stateMap)` with `{nodeId: 'selected' | 'inactive' | []}` pattern; define `node.state.selected` and `node.state.inactive` in Graph options
+- G6 v5 auto-resize: `autoResize: true` + `autoFit: 'view'` in Graph constructor; container div must have `width: 100%; height: 100%`
+- G6 v5 edge data: edges must have explicit `id` field (generate via `edge-${source}-${target}-${type}-${index}`); `e.source`/`e.target` in EdgeData are strings
 - Backend root: `backend/`, FastAPI app at `backend/app/main.py`
 - All Pydantic models in `backend/app/models/`, import via `from app.models import ...`
 - Run backend commands from `backend/` directory (uvicorn uses `app.main:app`)
@@ -308,4 +315,28 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - FileUploader fetches samples on mount via useEffect; failure is silently caught (backend may not be running)
   - Upload.Dragger with `beforeUpload={() => false}` prevents auto-upload; use `onChange` to get the file
   - Full build (tsc -b + vite build) passes; chunk size warning for antd+G6 is expected
+---
+
+## 2026-02-12 - US-FE-004
+- What was implemented: GraphCanvas component with AntV G6 5.x for knowledge graph rendering
+  - Dynamic node type/shape from ontologyDef (circle for Company/Person, diamond for Event_Acquisition)
+  - Dynamic node fill color from ontologyDef (blue for Company, orange for Event, green for Person)
+  - Dynamic edge styles from ontologyDef (solid/dashed, colored, with direction arrows)
+  - Node labels from properties.name (fallback to id), edge labels from ontologyDef.edge_types.label
+  - d3-force layout with preventOverlap, collision, and repulsive force tuning
+  - Node click dispatches SELECT_NODE (with nodeId + nodeType), canvas click dispatches DESELECT_NODE
+  - Selected node highlight (red stroke + halo), inactive nodes dimmed (opacity 0.35), related edges kept visible
+  - Auto-resize via `autoResize: true` + `autoFit: 'view'`
+  - Drag-canvas, zoom-canvas, drag-element behaviors
+  - Placeholder shown when no graphData loaded
+- Files changed:
+  - frontend/src/components/GraphCanvas/index.tsx (replaced placeholder with full G6 implementation, ~268 lines)
+- **Learnings for future iterations:**
+  - G6 v5 event handlers: `graph.on(NodeEvent.CLICK, ...)` receives `IEvent` union type; use `IElementEvent` type annotation (exported from `@antv/g6`) to get `event.target.id`
+  - G6 v5 node/edge style callbacks: read ontologyDef from a ref (`ontologyDefRef.current`) inside callbacks — the Graph is created once on mount but needs latest ontologyDef on each render
+  - G6 v5 requires explicit edge IDs (unlike v4 auto-generated) — generate via `edge-${source}-${target}-${type}-${index}`
+  - G6 v5 `setElementState` accepts a map of `{elementId: state | state[]}` for batch updates — more efficient than per-element calls
+  - `mapShape()` normalizes ontology shape names to G6 built-in types; `diamond` maps directly, `circle` is default
+  - Use `useRef` pattern for dispatch/state to avoid re-creating Graph instance on every state change
+  - Backend tests (174) still passing — no backend changes in this story
 ---
