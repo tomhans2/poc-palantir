@@ -1,4 +1,4 @@
-"""Tests for the FastAPI routes — /load, /simulate, /reset, /history."""
+"""Tests for the FastAPI routes — /load, /simulate, /reset, /history, /samples."""
 
 import io
 import json
@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.api.routes import engine  # direct access for state assertions
+from app.api.routes import engine, SAMPLES_DIR  # direct access for state assertions
 
 
 # ---------------------------------------------------------------------------
@@ -143,6 +143,24 @@ class TestLoadWorkspace:
         assert len(body["graph_data"]["nodes"]) == 4
         assert len(body["graph_data"]["edges"]) == 4
 
+    def test_load_file_returns_registered_functions(self, client):
+        resp = _upload_schema(client)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "registered_functions" in body
+        funcs = body["registered_functions"]
+        assert isinstance(funcs, list)
+        assert "set_property" in funcs
+        assert "adjust_numeric" in funcs
+        assert "recalculate_valuation" in funcs
+
+    def test_load_file_returns_empty_warnings(self, client):
+        resp = _upload_schema(client)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "warnings" in body
+        assert body["warnings"] == []
+
     def test_load_invalid_json(self, client):
         resp = client.post(
             "/api/v1/workspace/load",
@@ -151,15 +169,23 @@ class TestLoadWorkspace:
         assert resp.status_code == 400
         assert "Invalid JSON" in resp.json()["detail"]
 
-    def test_load_invalid_schema(self, client):
+    def test_load_invalid_schema_returns_422(self, client):
+        """Missing required fields should return 422 with Pydantic validation errors."""
         bad_schema = {"metadata": {"domain": "test"}}  # missing required fields
         file_bytes = json.dumps(bad_schema).encode()
         resp = client.post(
             "/api/v1/workspace/load",
             files={"file": ("bad.json", io.BytesIO(file_bytes), "application/json")},
         )
-        assert resp.status_code == 400
-        assert "validation" in resp.json()["detail"].lower() or "Schema" in resp.json()["detail"]
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        # Pydantic v2 returns a list of error dicts
+        assert isinstance(detail, list)
+        assert len(detail) > 0
+        # Each error should have 'loc', 'msg', 'type' fields
+        for err in detail:
+            assert "loc" in err
+            assert "msg" in err
 
     def test_load_no_file_no_sample(self, client):
         resp = client.post("/api/v1/workspace/load")
@@ -177,6 +203,107 @@ class TestLoadWorkspace:
         # After fresh load, E_ACQ_101 status should be PENDING (not FAILED from simulation)
         nodes = {n["id"]: n for n in resp.json()["graph_data"]["nodes"]}
         assert nodes["E_ACQ_101"]["status"] == "PENDING"
+
+    def test_load_with_unregistered_function_returns_warnings(self, client):
+        """JSON referencing a nonexistent function should succeed but include warnings."""
+        schema = _build_sample_schema()
+        # Add a rule referencing a nonexistent function
+        schema["action_engine"]["actions"][0]["ripple_rules"].append({
+            "rule_id": "R_BAD",
+            "propagation_path": "<-[ACQUIRES]- Company",
+            "condition": None,
+            "effect_on_target": {
+                "action_to_trigger": "nonexistent_func",
+                "parameters": {},
+            },
+            "insight_template": "test",
+            "insight_type": "info",
+            "insight_severity": "info",
+        })
+        resp = _upload_schema(client, schema)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["warnings"]) > 0
+        assert any("nonexistent_func" in w for w in body["warnings"])
+
+    def test_load_consecutive_fresh_workspace(self, client):
+        """Two consecutive /load calls should each produce a fresh workspace."""
+        # First load + simulate
+        _upload_schema(client)
+        client.post("/api/v1/workspace/simulate", json={"action_id": "trigger_acquisition_failure", "node_id": "E_ACQ_101"})
+        # Verify state changed
+        assert engine.graph.nodes["E_ACQ_101"]["status"] == "FAILED"
+
+        # Second load — fresh state
+        resp = _upload_schema(client)
+        assert resp.status_code == 200
+        assert engine.graph.nodes["E_ACQ_101"]["status"] == "PENDING"
+        # Event history should also be clean (engine.load_workspace doesn't clear event_queue
+        # but the event_queue from the first run persists — the key point is graph state resets)
+
+
+# ===========================================================================
+# /load via sample name
+# ===========================================================================
+
+
+class TestLoadSample:
+    def test_load_sample_corporate_acquisition(self, client):
+        """Loading built-in sample by name should work."""
+        resp = client.post("/api/v1/workspace/load?sample=corporate_acquisition")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["metadata"]["domain"] == "corporate_risk"
+        assert "ontology_def" in body
+        assert len(body["graph_data"]["nodes"]) >= 4
+        assert len(body["graph_data"]["edges"]) >= 4
+        assert "registered_functions" in body
+        assert len(body["registered_functions"]) > 0
+
+    def test_load_sample_not_found(self, client):
+        resp = client.post("/api/v1/workspace/load?sample=nonexistent_sample")
+        assert resp.status_code == 400
+        assert "not found" in resp.json()["detail"].lower()
+
+    def test_load_sample_idempotent(self, client):
+        """Loading sample twice should reset state."""
+        # First load
+        client.post("/api/v1/workspace/load?sample=corporate_acquisition")
+        # Simulate to change state
+        client.post("/api/v1/workspace/simulate", json={"action_id": "trigger_acquisition_failure", "node_id": "E_ACQ_101"})
+        # Second load
+        resp = client.post("/api/v1/workspace/load?sample=corporate_acquisition")
+        assert resp.status_code == 200
+        nodes = {n["id"]: n for n in resp.json()["graph_data"]["nodes"]}
+        assert nodes["E_ACQ_101"]["status"] == "PENDING"
+
+
+# ===========================================================================
+# /samples tests
+# ===========================================================================
+
+
+class TestListSamples:
+    def test_samples_returns_list(self, client):
+        resp = client.get("/api/v1/workspace/samples")
+        assert resp.status_code == 200
+        samples = resp.json()
+        assert isinstance(samples, list)
+        assert len(samples) >= 1  # at least corporate_acquisition
+
+    def test_samples_contains_corporate_acquisition(self, client):
+        resp = client.get("/api/v1/workspace/samples")
+        samples = resp.json()
+        names = [s["name"] for s in samples]
+        assert "corporate_acquisition" in names
+
+    def test_samples_include_description(self, client):
+        resp = client.get("/api/v1/workspace/samples")
+        samples = resp.json()
+        acq = next(s for s in samples if s["name"] == "corporate_acquisition")
+        assert "name" in acq
+        assert "description" in acq
+        assert len(acq["description"]) > 0
 
 
 # ===========================================================================

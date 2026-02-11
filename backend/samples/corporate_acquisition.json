@@ -1,0 +1,163 @@
+{
+  "metadata": {
+    "domain": "corporate_risk",
+    "version": "1.0",
+    "description": "基于投资与收购事件的风险传导推演沙盘"
+  },
+  "ontology_def": {
+    "node_types": {
+      "Company": {
+        "label": "公司",
+        "color": "#4A90D9",
+        "shape": "circle",
+        "icon": "bank"
+      },
+      "Event_Acquisition": {
+        "label": "收购事件",
+        "color": "#F5A623",
+        "shape": "diamond",
+        "icon": "thunderbolt"
+      }
+    },
+    "edge_types": {
+      "ACQUIRES": {
+        "label": "收购",
+        "color": "#666666",
+        "style": "solid"
+      },
+      "TARGET_OF": {
+        "label": "被收购",
+        "color": "#999999",
+        "style": "dashed"
+      },
+      "SUPPLIES_TO": {
+        "label": "供应",
+        "color": "#5CB85C",
+        "style": "solid"
+      }
+    }
+  },
+  "graph_data": {
+    "nodes": [
+      {
+        "id": "C_ALPHA",
+        "type": "Company",
+        "properties": {
+          "name": "Alpha Corp",
+          "valuation": 10000000,
+          "risk_status": "NORMAL"
+        }
+      },
+      {
+        "id": "C_BETA",
+        "type": "Company",
+        "properties": {
+          "name": "Beta Inc",
+          "valuation": 5000000,
+          "risk_status": "NORMAL"
+        }
+      },
+      {
+        "id": "C_GAMMA",
+        "type": "Company",
+        "properties": {
+          "name": "Gamma Ltd",
+          "valuation": 3000000,
+          "risk_status": "NORMAL"
+        }
+      },
+      {
+        "id": "E_ACQ_101",
+        "type": "Event_Acquisition",
+        "properties": {
+          "date": "2024-01-15",
+          "status": "PENDING",
+          "deal_size": 8000000
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "C_ALPHA",
+        "target": "E_ACQ_101",
+        "type": "ACQUIRES",
+        "properties": {}
+      },
+      {
+        "source": "C_BETA",
+        "target": "E_ACQ_101",
+        "type": "TARGET_OF",
+        "properties": {}
+      },
+      {
+        "source": "C_GAMMA",
+        "target": "C_ALPHA",
+        "type": "SUPPLIES_TO",
+        "properties": {
+          "dependency_weight": 0.6
+        }
+      },
+      {
+        "source": "C_GAMMA",
+        "target": "C_BETA",
+        "type": "SUPPLIES_TO",
+        "properties": {
+          "dependency_weight": 0.4
+        }
+      }
+    ]
+  },
+  "action_engine": {
+    "actions": [
+      {
+        "action_id": "trigger_acquisition_failure",
+        "target_node_type": "Event_Acquisition",
+        "display_name": "模拟收购失败事件",
+        "direct_effect": {
+          "property_to_update": "status",
+          "new_value": "FAILED"
+        },
+        "ripple_rules": [
+          {
+            "rule_id": "R001",
+            "propagation_path": "<-[ACQUIRES]- Company",
+            "condition": null,
+            "effect_on_target": {
+              "action_to_trigger": "recalculate_valuation",
+              "parameters": {
+                "shock_factor": -0.3
+              }
+            },
+            "insight_template": "收购失败导致 {target[name]} 估值重估，从 {target[valuation]} 调整",
+            "insight_type": "quantitative_impact",
+            "insight_severity": "critical"
+          },
+          {
+            "rule_id": "R002",
+            "propagation_path": "<-[TARGET_OF]- Company",
+            "condition": null,
+            "effect_on_target": {
+              "action_to_trigger": "update_risk_status",
+              "parameters": {
+                "status": "HIGH_RISK"
+              }
+            },
+            "insight_template": "{target[name]} 作为收购标的，风险状态升级为 HIGH_RISK",
+            "insight_type": "risk_propagation",
+            "insight_severity": "warning"
+          }
+        ]
+      },
+      {
+        "action_id": "trigger_acquisition_success",
+        "target_node_type": "Event_Acquisition",
+        "display_name": "模拟收购成功事件",
+        "direct_effect": {
+          "property_to_update": "status",
+          "new_value": "COMPLETED"
+        },
+        "ripple_rules": []
+      }
+    ]
+  }
+}

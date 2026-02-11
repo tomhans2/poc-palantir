@@ -1,21 +1,90 @@
-"""REST API routes for the workspace — load, simulate, reset, history."""
+"""REST API routes for the workspace — load, simulate, reset, history, samples."""
 
 from __future__ import annotations
 
 import json
+import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from pydantic import ValidationError
 
 from app.actions import action_functions
 from app.engine.graph_engine import OntologyEngine
 from app.models.api import SimulateRequest, SimulateResponse, InsightItem, DeltaGraph
 from app.models.workspace import WorkspaceConfig
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1/workspace")
 
 # --- Module-level singletons ---
 engine = OntologyEngine()
+
+# --- Samples directory (resolved relative to project root) ---
+SAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "samples"
+
+
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+
+def _check_unregistered_functions(data: dict[str, Any]) -> list[str]:
+    """Check all action_to_trigger references against the registry.
+
+    Returns a list of warning strings for any unregistered function names.
+    """
+    warnings: list[str] = []
+    actions = data.get("action_engine", {}).get("actions", [])
+    for action in actions:
+        for rule in action.get("ripple_rules", []):
+            func_name = rule.get("effect_on_target", {}).get("action_to_trigger")
+            if func_name and engine.action_registry.get(func_name) is None:
+                warnings.append(
+                    f"Function '{func_name}' referenced in rule '{rule.get('rule_id', '?')}' "
+                    f"is not registered in ActionRegistry"
+                )
+    return warnings
+
+
+def _load_sample_data(sample_name: str) -> dict[str, Any]:
+    """Load a built-in sample JSON file by name (without .json extension)."""
+    sample_path = SAMPLES_DIR / f"{sample_name}.json"
+    if not sample_path.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Sample '{sample_name}' not found. Available samples: "
+                   f"{[p.stem for p in sorted(SAMPLES_DIR.glob('*.json'))]}",
+        )
+    try:
+        return json.loads(sample_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Sample file '{sample_name}.json' contains invalid JSON: {exc}"
+        ) from exc
+
+
+# ------------------------------------------------------------------
+# GET /samples
+# ------------------------------------------------------------------
+
+@router.get("/samples")
+async def list_samples() -> list[dict[str, str]]:
+    """Return a list of available built-in sample files from the samples/ directory."""
+    if not SAMPLES_DIR.is_dir():
+        return []
+    results = []
+    for path in sorted(SAMPLES_DIR.glob("*.json")):
+        # Read description from the JSON metadata if available
+        description = ""
+        try:
+            content = json.loads(path.read_text(encoding="utf-8"))
+            description = content.get("metadata", {}).get("description", "")
+        except Exception:
+            pass
+        results.append({"name": path.stem, "description": description})
+    return results
 
 
 # ------------------------------------------------------------------
@@ -32,6 +101,8 @@ async def load_workspace(
     Accepts either:
     - A multipart/form-data file upload (``file``), or
     - A query parameter ``sample`` naming a built-in scenario (e.g. ``corporate_acquisition``).
+
+    Returns metadata, ontology_def, graph_data, actions, registered_functions, and any warnings.
     """
     if file is not None:
         # --- File upload path ---
@@ -41,21 +112,28 @@ async def load_workspace(
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}") from exc
     elif sample is not None:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Built-in sample '{sample}' loading not yet implemented. Upload a JSON file instead.",
-        )
+        # --- Built-in sample path ---
+        data = _load_sample_data(sample)
     else:
         raise HTTPException(status_code=400, detail="Provide either a file upload or a 'sample' query parameter.")
 
-    # Validate via Pydantic
+    # Validate via Pydantic — return 422 with field-level errors
     try:
         WorkspaceConfig(**data)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Schema validation failed: {exc}") from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
 
-    # Load into engine
+    # Load into engine (idempotent — load_workspace clears previous state)
     engine.load_workspace(data, action_module=action_functions)
+
+    # Check for unregistered function references
+    warnings = _check_unregistered_functions(data)
+    if warnings:
+        for w in warnings:
+            logger.warning(w)
+
+    # Build registered_functions list
+    registered_functions = engine.action_registry.list_actions()
 
     return {
         "metadata": data.get("metadata"),
@@ -65,6 +143,8 @@ async def load_workspace(
             engine._action_to_dict(a)
             for a in data.get("action_engine", {}).get("actions", [])
         ],
+        "registered_functions": registered_functions,
+        "warnings": warnings,
     }
 
 
