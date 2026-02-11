@@ -183,3 +183,29 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - Tests that create convention files in `samples/` must clean up in a `finally` block to avoid polluting other tests
   - Full test suite: 123 tests (110 previous + 13 new), all passing
 ---
+
+## 2026-02-11 - US-DATA-001
+- What was implemented: Enhanced corporate_acquisition.json sample data with full risk propagation scenario
+  - Expanded from 4 to 8 nodes: 4 Companies (Alpha, Beta, Gamma, Delta) + 2 Event_Acquisition + 2 Person (陈明远, 李志华)
+  - Expanded from 4 to 10 edges: ACQUIRES, TARGET_OF, SUPPLIES_TO (with dependency_weight), BOARD_MEMBER_OF
+  - Added Person node type (green circle) and BOARD_MEMBER_OF edge type to ontology_def
+  - trigger_acquisition_failure now has 5 ripple rules covering L1/L2/L3:
+    - R001: recalculate_valuation (L2, critical, quantitative_impact)
+    - R002: update_risk_status (L1, warning, risk_propagation)
+    - R003: adjust_numeric (L1, warning, quantitative_impact)
+    - R004: graph_weighted_exposure (L3, critical, network_analysis)
+    - R005: set_property (L1, info, recommendation)
+  - trigger_acquisition_success now has 2 ripple rules with event_trigger and quantitative_impact insights
+  - Insight types covered: quantitative_impact, risk_propagation, network_analysis, recommendation, event_trigger
+  - Insight severities covered: critical, warning, info
+  - Created comprehensive test_sample_data.py (26 tests) validating all acceptance criteria
+- Files changed:
+  - backend/samples/corporate_acquisition.json (enhanced from 4→8 nodes, 4→10 edges, 2→5 ripple rules)
+  - backend/tests/test_sample_data.py (new: 26 tests covering structure, engine loading, execution, and reset)
+- **Learnings for future iterations:**
+  - Tests in test_graph_engine.py and test_routes.py use their own inline `_build_sample_schema()` — modifying the sample JSON file does NOT break those tests
+  - The sample JSON tests (test_sample_data.py) load the actual file via `Path(__file__).resolve().parent.parent / "samples"` — same pattern as routes.py
+  - `graph_weighted_exposure` with `direction=in` and `edge_type=SUPPLIES_TO` correctly traverses incoming supply chain edges on C_ALPHA
+  - Ripple rules for E_ACQ_101 fire on both `<-[ACQUIRES]- Company` (→ C_ALPHA) and `<-[TARGET_OF]- Company` (→ C_BETA), giving ripple_path ≥ 3
+  - Full test suite: 149 tests (123 previous + 26 new), all passing
+---

@@ -189,7 +189,7 @@
         "验证: 返回的 ripple_path 长度 >= 3 (源节点 + 至少 2 个受影响节点)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
