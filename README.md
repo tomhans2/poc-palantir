@@ -50,6 +50,7 @@
 | 图计算 | NetworkX (有向图) |
 | 数据校验 | Pydantic 2.x |
 | API 文档 | Swagger UI (FastAPI 自动生成) |
+| 容器化 | Docker + Docker Compose + Nginx |
 
 ## 快速开始
 
@@ -92,6 +93,38 @@ npm install
 npm run dev
 ```
 
+### 方式三：Docker Compose 部署 (无需本地环境)
+
+```bash
+# 构建并启动
+docker-compose up -d --build
+
+# 查看服务状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f
+```
+
+启动后访问：
+- 前端界面: http://localhost:3000
+- API 文档 (Swagger): http://localhost:3000/docs (通过 nginx 代理)
+- 后端直连: http://localhost:8000
+
+自定义端口 (通过 `.env` 文件):
+
+```bash
+# .env
+FRONTEND_PORT=8080
+BACKEND_PORT=9000
+```
+
+停止并清理：
+
+```bash
+docker-compose down
+```
+
 ### 使用流程
 
 1. 浏览器访问 http://localhost:5173
@@ -105,8 +138,11 @@ npm run dev
 palantir-poc/
 ├── README.md                  # 本文件
 ├── start.sh                   # 一键启动脚本
+├── docker-compose.yml         # Docker Compose 编排
 ├── backend/
 │   ├── README.md              # 后端文档
+│   ├── Dockerfile             # 后端容器镜像
+│   ├── .dockerignore
 │   ├── requirements.txt       # Python 依赖
 │   ├── app/
 │   │   ├── main.py            # FastAPI 入口 (CORS, 路由注册)
@@ -129,6 +165,9 @@ palantir-poc/
 │   └── tests/                 # pytest 测试套件 (174+ 测试)
 ├── frontend/
 │   ├── README.md              # 前端文档
+│   ├── Dockerfile             # 前端容器镜像 (多阶段构建)
+│   ├── .dockerignore
+│   ├── nginx.conf             # Nginx 反向代理配置
 │   ├── package.json
 │   ├── vite.config.ts         # Vite 配置 (端口 5173, API 代理)
 │   └── src/
