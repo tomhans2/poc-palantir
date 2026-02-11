@@ -210,7 +210,7 @@
         "uvicorn 启动后 4 个 API 接口均可正常调用 (用 httpx 或 requests 测试)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

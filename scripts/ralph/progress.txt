@@ -209,3 +209,24 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - Ripple rules for E_ACQ_101 fire on both `<-[ACQUIRES]- Company` (→ C_ALPHA) and `<-[TARGET_OF]- Company` (→ C_BETA), giving ripple_path ≥ 3
   - Full test suite: 149 tests (123 previous + 26 new), all passing
 ---
+
+## 2026-02-11 - US-BE-007
+- What was implemented: Backend engine end-to-end integration verification test suite
+  - `TestEngineFullPipeline` (16 tests): validates the complete engine-level pipeline — load → execute → check results → reset → re-execute
+    - Node/edge counts match JSON, execute returns success, updated_nodes include direct + ripple targets
+    - highlight_edges on propagation path, 3+ insight types, critical severity present
+    - Insight text has no unfilled placeholders, all insights are structured objects
+    - Reset restores initial state, re-execute after reset gives consistent results
+    - action_registry.list_actions() contains all 6 registered function names
+    - Event queue records executions correctly (1 and 2 events after 1 and 2 simulations)
+  - `TestAPIEndToEnd` (9 tests): validates all 4 API endpoints via FastAPI TestClient
+    - /health, /load (sample + file upload), /simulate, /reset, /history, /samples
+    - Full round-trip test: load → simulate → verify → reset → simulate again → verify consistency
+- Files changed:
+  - backend/tests/test_e2e_integration.py (new: 25 tests in 2 test classes)
+- **Learnings for future iterations:**
+  - TestClient (from fastapi.testclient) is synchronous despite async endpoints — no need for httpx.AsyncClient in tests
+  - Engine-level tests use standalone OntologyEngine instances; API-level tests use the module-level singleton from routes.py
+  - Consistency check (same results after reset) compares sorted insight types + sorted ripple paths, not raw lists (order may vary between insight items)
+  - Full test suite: 174 tests (149 previous + 25 new), all passing
+---
