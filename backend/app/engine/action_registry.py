@@ -35,17 +35,19 @@ class ActionRegistry:
 
     def __init__(self) -> None:
         self._actions: dict[str, Callable] = {}
+        self._sources: dict[str, str] = {}
 
-    def register(self, name: str, func: Callable) -> None:
-        """Register a callable under the given name."""
+    def register(self, name: str, func: Callable, source: str = "builtin") -> None:
+        """Register a callable under the given name with a source label."""
         self._actions[name] = func
+        self._sources[name] = source
 
-    def register_from_module(self, module: object) -> None:
+    def register_from_module(self, module: object, source: str = "builtin") -> None:
         """Scan a module for callables marked with @register_action and register them."""
         for _name, obj in inspect.getmembers(module, callable):
             if getattr(obj, "_is_action", False):
                 action_name = getattr(obj, "_action_name", obj.__name__)
-                self.register(action_name, obj)
+                self.register(action_name, obj, source=source)
 
     def get(self, name: str) -> Optional[Callable]:
         """Return the action function registered under name, or None."""
@@ -54,3 +56,10 @@ class ActionRegistry:
     def list_actions(self) -> list[str]:
         """Return a sorted list of all registered action names."""
         return sorted(self._actions.keys())
+
+    def list_actions_with_source(self) -> list[dict[str, str]]:
+        """Return a sorted list of registered actions with their source labels."""
+        return sorted(
+            [{"name": name, "source": self._sources.get(name, "builtin")} for name in self._actions],
+            key=lambda x: x["name"],
+        )

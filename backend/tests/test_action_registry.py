@@ -141,3 +141,52 @@ class TestActionRegistry:
         )
 
         del sys.modules["test_actions"]
+
+    def test_register_with_source(self):
+        registry = ActionRegistry()
+        registry.register("my_func", dummy_action, source="custom")
+        result = registry.list_actions_with_source()
+        assert result == [{"name": "my_func", "source": "custom"}]
+
+    def test_register_from_module_with_source(self):
+        mod = types.ModuleType("fake_module")
+        mod.dummy_action = dummy_action
+        mod.another_action = another_action
+
+        registry = ActionRegistry()
+        registry.register_from_module(mod, source="builtin")
+
+        result = registry.list_actions_with_source()
+        assert len(result) == 2
+        for entry in result:
+            assert entry["source"] == "builtin"
+
+    def test_custom_overrides_builtin_source(self):
+        """When a custom module registers the same name, it overrides the builtin source."""
+        mod_builtin = types.ModuleType("builtin_mod")
+        mod_builtin.dummy_action = dummy_action
+
+        mod_custom = types.ModuleType("custom_mod")
+        mod_custom.dummy_action = dummy_action
+
+        registry = ActionRegistry()
+        registry.register_from_module(mod_builtin, source="builtin")
+        registry.register_from_module(mod_custom, source="custom")
+
+        result = registry.list_actions_with_source()
+        entry = next(e for e in result if e["name"] == "dummy_action")
+        assert entry["source"] == "custom"
+
+    def test_list_actions_with_source_sorted(self):
+        registry = ActionRegistry()
+        registry.register("zebra", dummy_action, source="custom")
+        registry.register("alpha", another_action, source="builtin")
+        result = registry.list_actions_with_source()
+        assert result[0]["name"] == "alpha"
+        assert result[1]["name"] == "zebra"
+
+    def test_default_source_is_builtin(self):
+        registry = ActionRegistry()
+        registry.register("my_func", dummy_action)
+        result = registry.list_actions_with_source()
+        assert result[0]["source"] == "builtin"

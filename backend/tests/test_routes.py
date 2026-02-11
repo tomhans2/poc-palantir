@@ -150,9 +150,14 @@ class TestLoadWorkspace:
         assert "registered_functions" in body
         funcs = body["registered_functions"]
         assert isinstance(funcs, list)
-        assert "set_property" in funcs
-        assert "adjust_numeric" in funcs
-        assert "recalculate_valuation" in funcs
+        # Each entry is now {name, source}
+        func_names = [f["name"] for f in funcs]
+        assert "set_property" in func_names
+        assert "adjust_numeric" in func_names
+        assert "recalculate_valuation" in func_names
+        # All builtin by default
+        for f in funcs:
+            assert f["source"] == "builtin"
 
     def test_load_file_returns_empty_warnings(self, client):
         resp = _upload_schema(client)
@@ -473,3 +478,213 @@ class TestHealth:
         resp = client.get("/health")
         assert resp.status_code == 200
         assert resp.json() == {"status": "ok"}
+
+
+# ===========================================================================
+# Custom Action Extension (US-CORE-002)
+# ===========================================================================
+
+# Custom action Python source used in tests
+CUSTOM_ACTION_PY = b"""\
+from app.engine.action_registry import ActionContext, ActionResult, register_action
+
+@register_action
+def my_custom_calc(ctx: ActionContext) -> ActionResult:
+    '''A custom calculation function.'''
+    old_val = ctx.target_node.get("valuation", 0)
+    new_val = old_val * 2
+    return ActionResult(
+        updated_properties={"valuation": new_val},
+        old_values={"valuation": old_val},
+    )
+"""
+
+# Custom action that overrides a builtin (set_property)
+CUSTOM_OVERRIDE_PY = b"""\
+from app.engine.action_registry import ActionContext, ActionResult, register_action
+
+@register_action
+def set_property(ctx: ActionContext) -> ActionResult:
+    '''Custom override of set_property that appends _CUSTOM to the value.'''
+    prop = ctx.params["property"]
+    value = str(ctx.params["value"]) + "_CUSTOM"
+    old_value = ctx.target_node.get(prop)
+    return ActionResult(
+        updated_properties={prop: value},
+        old_values={prop: old_value},
+    )
+"""
+
+
+class TestCustomActionExtension:
+    def test_load_json_only_registers_builtin(self, client):
+        """Loading only JSON (no .py file) should register only builtin functions."""
+        resp = _upload_schema(client)
+        assert resp.status_code == 200
+        body = resp.json()
+        funcs = body["registered_functions"]
+        for f in funcs:
+            assert f["source"] == "builtin"
+        func_names = [f["name"] for f in funcs]
+        assert "set_property" in func_names
+        assert "adjust_numeric" in func_names
+
+    def test_upload_custom_action_file(self, client):
+        """Uploading JSON + custom .py file should register custom functions."""
+        schema = _build_sample_schema()
+        file_bytes = json.dumps(schema).encode()
+        resp = client.post(
+            "/api/v1/workspace/load",
+            files={
+                "file": ("test.json", io.BytesIO(file_bytes), "application/json"),
+                "action_file": ("custom.py", io.BytesIO(CUSTOM_ACTION_PY), "text/x-python"),
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        funcs = body["registered_functions"]
+        func_names = [f["name"] for f in funcs]
+        # Custom function should be registered
+        assert "my_custom_calc" in func_names
+        # Builtin functions should still be present
+        assert "set_property" in func_names
+        # Check source labels
+        custom_entry = next(f for f in funcs if f["name"] == "my_custom_calc")
+        assert custom_entry["source"] == "custom"
+        builtin_entry = next(f for f in funcs if f["name"] == "set_property")
+        assert builtin_entry["source"] == "builtin"
+
+    def test_custom_function_found_by_registry(self, client):
+        """Custom function should be callable via engine's ActionRegistry.get()."""
+        schema = _build_sample_schema()
+        file_bytes = json.dumps(schema).encode()
+        client.post(
+            "/api/v1/workspace/load",
+            files={
+                "file": ("test.json", io.BytesIO(file_bytes), "application/json"),
+                "action_file": ("custom.py", io.BytesIO(CUSTOM_ACTION_PY), "text/x-python"),
+            },
+        )
+        func = engine.action_registry.get("my_custom_calc")
+        assert func is not None
+        assert callable(func)
+
+    def test_custom_override_replaces_builtin(self, client):
+        """Custom .py with same-name function should override the builtin version."""
+        schema = _build_sample_schema()
+        file_bytes = json.dumps(schema).encode()
+        resp = client.post(
+            "/api/v1/workspace/load",
+            files={
+                "file": ("test.json", io.BytesIO(file_bytes), "application/json"),
+                "action_file": ("override.py", io.BytesIO(CUSTOM_OVERRIDE_PY), "text/x-python"),
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        funcs = body["registered_functions"]
+        sp_entry = next(f for f in funcs if f["name"] == "set_property")
+        assert sp_entry["source"] == "custom"  # overridden by custom
+
+    def test_custom_override_function_executes(self, client):
+        """The overridden set_property should actually use the custom implementation."""
+        schema = _build_sample_schema()
+        file_bytes = json.dumps(schema).encode()
+        client.post(
+            "/api/v1/workspace/load",
+            files={
+                "file": ("test.json", io.BytesIO(file_bytes), "application/json"),
+                "action_file": ("override.py", io.BytesIO(CUSTOM_OVERRIDE_PY), "text/x-python"),
+            },
+        )
+        # The custom set_property appends "_CUSTOM" to the value
+        from app.engine.action_registry import ActionContext
+        import networkx as nx
+        func = engine.action_registry.get("set_property")
+        ctx = ActionContext(
+            target_node={"status": "PENDING"},
+            source_node={},
+            target_id="test",
+            source_id="src",
+            params={"property": "status", "value": "FAILED"},
+            graph=nx.DiGraph(),
+        )
+        result = func(ctx)
+        assert result.updated_properties["status"] == "FAILED_CUSTOM"
+
+    def test_custom_function_correct_signature(self, client):
+        """Custom function with (ctx: ActionContext) -> ActionResult signature should work with engine."""
+        # Build a schema that references the custom function
+        schema = _build_sample_schema()
+        schema["action_engine"]["actions"][0]["ripple_rules"].append({
+            "rule_id": "R_CUSTOM",
+            "propagation_path": "<-[ACQUIRES]- Company",
+            "condition": None,
+            "effect_on_target": {
+                "action_to_trigger": "my_custom_calc",
+                "parameters": {},
+            },
+            "insight_template": "{target[name]} valuation doubled",
+            "insight_type": "quantitative_impact",
+            "insight_severity": "info",
+        })
+        file_bytes = json.dumps(schema).encode()
+        resp = client.post(
+            "/api/v1/workspace/load",
+            files={
+                "file": ("test.json", io.BytesIO(file_bytes), "application/json"),
+                "action_file": ("custom.py", io.BytesIO(CUSTOM_ACTION_PY), "text/x-python"),
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["warnings"] == []  # my_custom_calc should be registered
+
+        # Simulate and verify the custom function was called
+        sim_resp = client.post(
+            "/api/v1/workspace/simulate",
+            json={"action_id": "trigger_acquisition_failure", "node_id": "E_ACQ_101"},
+        )
+        assert sim_resp.status_code == 200
+        body = sim_resp.json()
+        assert body["status"] == "success"
+        # Check that C_ALPHA valuation was doubled by my_custom_calc
+        # Note: R001 runs first (recalculate_valuation with shock_factor=-0.3):
+        #   10000000 * 0.7 = 7000000
+        # Then R_CUSTOM runs (my_custom_calc doubles): 7000000 * 2 = 14000000
+        updated = {n["id"]: n for n in body["delta_graph"]["updated_nodes"]}
+        assert "C_ALPHA" in updated
+        assert updated["C_ALPHA"].get("valuation") == 14000000.0
+
+    def test_convention_based_loading(self, client, tmp_path):
+        """When a sample has a companion .py file in samples/, it should be auto-loaded."""
+        from app.api.routes import SAMPLES_DIR
+        # Create a temporary .py file alongside the existing sample
+        py_content = CUSTOM_ACTION_PY
+        convention_path = SAMPLES_DIR / "corporate_acquisition.py"
+        existed_before = convention_path.exists()
+        try:
+            convention_path.write_bytes(py_content)
+            resp = client.post("/api/v1/workspace/load?sample=corporate_acquisition")
+            assert resp.status_code == 200
+            body = resp.json()
+            funcs = body["registered_functions"]
+            func_names = [f["name"] for f in funcs]
+            assert "my_custom_calc" in func_names
+            custom_entry = next(f for f in funcs if f["name"] == "my_custom_calc")
+            assert custom_entry["source"] == "custom"
+        finally:
+            if not existed_before and convention_path.exists():
+                convention_path.unlink()
+
+    def test_registered_functions_source_format(self, client):
+        """registered_functions should be list of {name, source} dicts."""
+        resp = _upload_schema(client)
+        assert resp.status_code == 200
+        body = resp.json()
+        funcs = body["registered_functions"]
+        assert isinstance(funcs, list)
+        for f in funcs:
+            assert "name" in f
+            assert "source" in f
+            assert isinstance(f["name"], str)
+            assert f["source"] in ("builtin", "custom")

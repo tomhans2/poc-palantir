@@ -35,11 +35,15 @@ class OntologyEngine:
         self,
         schema: dict[str, Any],
         action_module: object | None = None,
+        custom_action_module: object | None = None,
     ) -> None:
         """Parse *schema* (a WorkspaceConfig-shaped dict) and build the NetworkX graph.
 
         If *action_module* is provided, scan it for ``@register_action``-decorated
-        functions and register them in the engine's ActionRegistry.
+        functions and register them as ``"builtin"`` in the ActionRegistry.
+
+        If *custom_action_module* is provided, scan it for ``@register_action``-decorated
+        functions and register them as ``"custom"`` (overriding any builtin with the same name).
         """
         self.graph.clear()
         self.action_registry = ActionRegistry()
@@ -66,9 +70,11 @@ class OntologyEngine:
             for nid, attrs in self.graph.nodes(data=True)
         }
 
-        # --- Register action functions ---
+        # --- Register action functions (builtin first, custom overrides) ---
         if action_module is not None:
-            self.action_registry.register_from_module(action_module)
+            self.action_registry.register_from_module(action_module, source="builtin")
+        if custom_action_module is not None:
+            self.action_registry.register_from_module(custom_action_module, source="custom")
 
     # ------------------------------------------------------------------
     # Action execution

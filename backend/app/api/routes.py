@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +67,24 @@ def _load_sample_data(sample_name: str) -> dict[str, Any]:
         ) from exc
 
 
+def _load_module_from_path(path: Path, module_name: str = "custom_actions") -> object:
+    """Dynamically load a Python module from a file path using importlib."""
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise HTTPException(status_code=400, detail=f"Cannot load Python module from '{path}'")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _find_convention_action_file(sample_name: str) -> Path | None:
+    """Check for a convention-based .py file alongside the sample JSON."""
+    py_path = SAMPLES_DIR / f"{sample_name}.py"
+    if py_path.is_file():
+        return py_path
+    return None
+
+
 # ------------------------------------------------------------------
 # GET /samples
 # ------------------------------------------------------------------
@@ -94,6 +114,7 @@ async def list_samples() -> list[dict[str, str]]:
 @router.post("/load")
 async def load_workspace(
     file: UploadFile | None = File(None),
+    action_file: UploadFile | None = File(None),
     sample: str | None = None,
 ) -> dict[str, Any]:
     """Load a workspace from an uploaded JSON file or a built-in sample name.
@@ -102,8 +123,18 @@ async def load_workspace(
     - A multipart/form-data file upload (``file``), or
     - A query parameter ``sample`` naming a built-in scenario (e.g. ``corporate_acquisition``).
 
-    Returns metadata, ontology_def, graph_data, actions, registered_functions, and any warnings.
+    Optionally accepts a second file upload (``action_file``) containing custom
+    ``@register_action``-decorated Python functions. Custom functions override
+    builtin functions with the same name.
+
+    When loading a sample, the system also checks for a convention-based Python file
+    at ``samples/<sample_name>.py`` and auto-loads it if present.
+
+    Returns metadata, ontology_def, graph_data, actions, registered_functions (with source), and warnings.
     """
+    custom_module = None
+    sample_name: str | None = None
+
     if file is not None:
         # --- File upload path ---
         try:
@@ -113,6 +144,7 @@ async def load_workspace(
             raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}") from exc
     elif sample is not None:
         # --- Built-in sample path ---
+        sample_name = sample
         data = _load_sample_data(sample)
     else:
         raise HTTPException(status_code=400, detail="Provide either a file upload or a 'sample' query parameter.")
@@ -123,8 +155,34 @@ async def load_workspace(
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
 
+    # --- Resolve custom action module ---
+    # Priority 1: explicit action_file upload (overrides convention)
+    if action_file is not None:
+        raw_py = await action_file.read()
+        # Write to a temp file so importlib can load it
+        tmp = tempfile.NamedTemporaryFile(suffix=".py", delete=False, mode="wb")
+        tmp.write(raw_py)
+        tmp.flush()
+        tmp.close()
+        try:
+            custom_module = _load_module_from_path(Path(tmp.name), module_name="uploaded_actions")
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Failed to load custom action file: {exc}") from exc
+    # Priority 2: convention-based .py file alongside sample JSON
+    elif sample_name is not None:
+        convention_path = _find_convention_action_file(sample_name)
+        if convention_path is not None:
+            try:
+                custom_module = _load_module_from_path(convention_path, module_name=f"sample_{sample_name}_actions")
+            except Exception as exc:
+                logger.warning("Failed to load convention action file %s: %s", convention_path, exc)
+
     # Load into engine (idempotent — load_workspace clears previous state)
-    engine.load_workspace(data, action_module=action_functions)
+    engine.load_workspace(data, action_module=action_functions, custom_action_module=custom_module)
+
+    # Log registered functions with sources
+    for entry in engine.action_registry.list_actions_with_source():
+        logger.info("Registered action: %s (source: %s)", entry["name"], entry["source"])
 
     # Check for unregistered function references
     warnings = _check_unregistered_functions(data)
@@ -132,8 +190,8 @@ async def load_workspace(
         for w in warnings:
             logger.warning(w)
 
-    # Build registered_functions list
-    registered_functions = engine.action_registry.list_actions()
+    # Build registered_functions list with source info
+    registered_functions = engine.action_registry.list_actions_with_source()
 
     return {
         "metadata": data.get("metadata"),
