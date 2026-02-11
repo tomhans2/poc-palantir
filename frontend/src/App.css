@@ -70,3 +70,13 @@
 .sample-selector {
   width: 100%;
 }
+
+/* InsightFeed pulse animation for critical insights */
+@keyframes insightPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(255, 77, 79, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(255, 77, 79, 0.15);
+  }
+}
