@@ -227,7 +227,7 @@
         "验证: npm run build 无 TypeScript 编译错误"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {

@@ -1,4 +1,9 @@
 ## Codebase Patterns
+- Frontend root: `frontend/`, Vite + React + TypeScript project
+- Frontend dev: `npm run dev` from `frontend/` directory, port 5173, proxy `/api` -> `http://localhost:8000`
+- Frontend types: `frontend/src/types/index.ts` — all TypeScript interfaces matching backend Pydantic models
+- Frontend API: `frontend/src/services/api.ts` — axios instance + functions: `loadWorkspace`, `simulate`, `resetWorkspace`, `getHistory`, `getSamples`
+- Frontend dependencies: react 19, antd 6, @antv/g6 5.x, axios, @ant-design/icons 6
 - Backend root: `backend/`, FastAPI app at `backend/app/main.py`
 - All Pydantic models in `backend/app/models/`, import via `from app.models import ...`
 - Run backend commands from `backend/` directory (uvicorn uses `app.main:app`)
@@ -229,4 +234,22 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - Engine-level tests use standalone OntologyEngine instances; API-level tests use the module-level singleton from routes.py
   - Consistency check (same results after reset) compares sorted insight types + sorted ripple paths, not raw lists (order may vary between insight items)
   - Full test suite: 174 tests (149 previous + 25 new), all passing
+---
+
+## 2026-02-11 - US-FE-001
+- What was implemented: Frontend project initialization with Vite + React + TypeScript + Ant Design + G6
+  - Created `frontend/` directory via `npm create vite@latest` with react-ts template
+  - Installed all required dependencies: react 19, antd 6, @antv/g6 5.x, axios, @ant-design/icons 6
+  - Configured `vite.config.ts`: port 5173, proxy `/api` -> `http://localhost:8000`
+  - Created `src/types/index.ts`: all TypeScript interfaces matching backend Pydantic models (NodeTypeDef, EdgeTypeDef, OntologyDef, GraphNode, GraphEdge, GraphData, Action, InsightItem, SimulateResponse, LoadResponse, etc.)
+  - Created `src/services/api.ts`: axios instance + 5 API functions (loadWorkspace, simulate, resetWorkspace, getHistory, getSamples)
+- Files changed:
+  - frontend/ (entire new directory: 18 files)
+  - Key files: vite.config.ts, src/types/index.ts, src/services/api.ts, package.json
+- **Learnings for future iterations:**
+  - Vite creates the project with React 19 (latest), not 18 — should be fine for this POC
+  - antd installed as v6 (latest), not v5 — API is similar but check for breaking changes if needed
+  - `npm run build` runs `tsc -b && vite build` (TypeScript check before Vite build)
+  - Proxy config in vite.config.ts handles `/api` prefix forwarding to backend
+  - `loadWorkspace` accepts either `File` (for uploads) or `string` (for sample name), uses different API call paths
 ---
