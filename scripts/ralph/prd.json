@@ -372,7 +372,7 @@
         "验证: start.sh 一键启动后前后端均可访问"
       ],
       "priority": 18,
-      "passes": false,
+      "passes": true,
       "notes": "命令行运行是 POC 的主要使用方式。README 文档是项目交付的重要组成部分。"
     },
     {

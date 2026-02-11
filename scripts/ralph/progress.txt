@@ -47,6 +47,8 @@
 - `/load` accepts optional `action_file` UploadFile for custom Python action files; also auto-loads convention-based `samples/<name>.py` when loading a sample
 - `registered_functions` in /load response is now `list[{name: str, source: str}]` (not `list[str]`)
 - Dynamic module loading: use `importlib.util.spec_from_file_location` + `module_from_spec` + `exec_module` to load .py files at runtime
+- FastAPI startup logging: use `lifespan` async context manager (not deprecated `@app.on_event`); log to `logging.getLogger("uvicorn.error")` for visibility
+- Project docs: root README.md, backend/README.md, frontend/README.md; start.sh one-click launcher in project root
 
 # Ralph Progress Log
 Started: 2026年 2月11日 星期三 22时17分10秒 CST
@@ -406,4 +408,26 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - The `useEffect` watching `pendingSimulation` fires the animation; the animation itself dispatches `SIMULATE_DONE` when complete — this is a controlled async side effect pattern
   - Edge matching between backend `highlight_edges` and G6 edge IDs requires bidirectional comparison since edge direction in G6 data may differ from the backend's propagation direction
   - Frontend build passes; backend tests (174) still passing — no backend changes in this story
+---
+
+## 2026-02-12 - US-DEPLOY-001
+- What was implemented: CLI development mode setup and project documentation
+  - Root `README.md`: project intro, ASCII architecture diagram, tech stack table, quick start guide (one-click + manual), directory structure, API summary, core concepts
+  - `backend/README.md`: install/startup steps, full API endpoint documentation with curl examples, custom Action function guide (ActionContext API, injection methods, builtin function table), test instructions, directory structure
+  - `frontend/README.md`: install/startup steps, Vite environment config table, build commands, tech stack, directory structure
+  - `start.sh`: one-click startup script with Python/Node.js/npm environment detection, colored output, dependency auto-install, backend+frontend parallel launch with trap-based cleanup on Ctrl+C
+  - Backend startup logging via FastAPI `lifespan` event: logs loaded action function count+names and available sample data files on uvicorn startup
+  - Swagger UI auto-generated at `/docs` with all 6 endpoints: /health, /samples, /load, /simulate, /reset, /history
+- Files changed:
+  - README.md (new: root project documentation)
+  - backend/README.md (new: backend documentation)
+  - frontend/README.md (replaced Vite boilerplate with project-specific docs)
+  - start.sh (new: one-click startup script, chmod +x)
+  - backend/app/main.py (added lifespan event with startup logging)
+- **Learnings for future iterations:**
+  - FastAPI `lifespan` is the recommended way to run startup/shutdown events (replaces deprecated `@app.on_event`)
+  - Use `logging.getLogger("uvicorn.error")` to log at the uvicorn logger level (visible in standard uvicorn output)
+  - `start.sh` uses `trap cleanup SIGINT SIGTERM` to ensure both background processes are killed on Ctrl+C
+  - Frontend chunk size warning for antd+G6 is expected and harmless
+  - Backend tests (174) all passing; frontend build (tsc + vite) successful
 ---
