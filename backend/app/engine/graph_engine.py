@@ -8,6 +8,7 @@ from typing import Any, Optional
 import networkx as nx
 
 from app.engine.action_registry import ActionContext, ActionRegistry, ActionResult
+from app.engine.event_queue import EventQueue
 from app.models.action import Action, RippleRule
 from app.models.workspace import WorkspaceConfig
 
@@ -20,6 +21,7 @@ class OntologyEngine:
         self.schema: Optional[dict[str, Any]] = None
         self.initial_snapshot: dict[str, dict[str, Any]] = {}
         self.action_registry: ActionRegistry = ActionRegistry()
+        self.event_queue: EventQueue = EventQueue()
         self.insights_feed: list[dict[str, Any]] = []
         self.ripple_path: list[str] = []
         self.updated_nodes: list[dict[str, Any]] = []
@@ -105,7 +107,7 @@ class OntologyEngine:
         for rule in action_def.ripple_rules:
             self._process_ripple_rule(rule, target_node_id)
 
-        return {
+        result = {
             "status": "success",
             "delta_graph": {
                 "updated_nodes": self.updated_nodes,
@@ -114,6 +116,11 @@ class OntologyEngine:
             "ripple_path": self.ripple_path,
             "insights": self.insights_feed,
         }
+
+        # --- Record event in history ---
+        self.event_queue.push(action_id, target_node_id, result)
+
+        return result
 
     # ------------------------------------------------------------------
     # Ripple rule processing
