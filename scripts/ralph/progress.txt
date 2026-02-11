@@ -4,6 +4,8 @@
 - Frontend types: `frontend/src/types/index.ts` — all TypeScript interfaces matching backend Pydantic models
 - Frontend API: `frontend/src/services/api.ts` — axios instance + functions: `loadWorkspace`, `simulate`, `resetWorkspace`, `getHistory`, `getSamples`
 - Frontend dependencies: react 19, antd 6, @antv/g6 5.x, axios, @ant-design/icons 6
+- Frontend state: `src/hooks/useWorkspace.ts` — WorkspaceContext + useReducer; access via `useWorkspace()` hook; `useSimulation()` wraps simulate API
+- Frontend components: `src/components/` — WorkspaceProvider wraps App in `main.tsx`
 - Backend root: `backend/`, FastAPI app at `backend/app/main.py`
 - All Pydantic models in `backend/app/models/`, import via `from app.models import ...`
 - Run backend commands from `backend/` directory (uvicorn uses `app.main:app`)
@@ -252,4 +254,27 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - `npm run build` runs `tsc -b && vite build` (TypeScript check before Vite build)
   - Proxy config in vite.config.ts handles `/api` prefix forwarding to backend
   - `loadWorkspace` accepts either `File` (for uploads) or `string` (for sample name), uses different API call paths
+---
+
+## 2026-02-11 - US-FE-002
+- What was implemented: React Context global state management with useReducer
+  - `src/hooks/useWorkspace.ts`: WorkspaceState interface, WorkspaceAction union type, workspaceReducer pure function, WorkspaceContext, useWorkspace() hook, useWorkspaceReducer() helper
+  - `src/hooks/useSimulation.ts`: useSimulation() hook wrapping simulate API with SIMULATE_START/DONE dispatch
+  - `src/components/WorkspaceProvider.tsx`: Context provider component using useWorkspaceReducer
+  - `main.tsx`: App wrapped with WorkspaceProvider
+  - `App.tsx`: Updated to use useWorkspace() as smoke test
+- Files changed:
+  - frontend/src/hooks/useWorkspace.ts (new: ~140 lines — state, actions, reducer, context, hook)
+  - frontend/src/hooks/useSimulation.ts (new: ~45 lines — simulation wrapper)
+  - frontend/src/components/WorkspaceProvider.tsx (new: ~15 lines — provider component)
+  - frontend/src/main.tsx (added WorkspaceProvider wrapping)
+  - frontend/src/App.tsx (replaced boilerplate with useWorkspace smoke test)
+- **Learnings for future iterations:**
+  - React 19 uses `<Context value={...}>` instead of `<Context.Provider value={...}>` (no `.Provider` needed)
+  - WorkspaceState includes `simulationHistory: SimulationHistoryEntry[]` for tracking all simulation runs (each with insights, ripplePath, timestamp)
+  - `insights` in state is a flat array of ALL insights from all simulations; `simulationHistory` groups them by simulation run
+  - `LOAD_WORKSPACE` resets entire state to initial (clears selections, insights, history) — idempotent
+  - `RESET` only clears selections/insights/history but keeps metadata/ontologyDef/graphData/actions (mirrors backend /reset behavior)
+  - `useSimulation` depends on `state.selectedNodeId` — returns early if no node selected
+  - Frontend hooks in `src/hooks/`, components in `src/components/`
 ---

@@ -245,7 +245,7 @@
         "验证: dispatch LOAD_WORKSPACE 后 state.graphData 和 state.actions 正确更新"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": ""
     },
     {
