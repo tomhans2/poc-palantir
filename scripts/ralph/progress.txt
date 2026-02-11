@@ -4,6 +4,8 @@
 - Run backend commands from `backend/` directory (uvicorn uses `app.main:app`)
 - CORS configured for `http://localhost:5173` (Vite dev server)
 - Use `pydantic>=2.0` syntax (BaseModel, no `class Config`)
+- ActionRegistry in `backend/app/engine/action_registry.py`: use `@register_action` decorator, `ActionContext`/`ActionResult` dataclasses
+- Tests go in `backend/tests/`, run with `python -m pytest tests/ -v` from `backend/`
 
 # Ralph Progress Log
 Started: 2026年 2月11日 星期三 22时17分10秒 CST
@@ -24,4 +26,17 @@ Started: 2026年 2月11日 星期三 22时17分10秒 CST
   - All dependencies already installed in conda env, no virtualenv needed
   - RippleRule has `insight_type` and `insight_severity` as direct fields (not nested)
   - Models __init__.py re-exports all models for convenient import
+---
+
+## 2026-02-11 - US-BE-002
+- What was implemented: ActionRegistry function registry with @register_action decorator, ActionContext/ActionResult dataclasses
+- Files changed:
+  - backend/app/engine/action_registry.py (ActionContext, ActionResult, @register_action, ActionRegistry class)
+  - backend/tests/test_action_registry.py (12 tests covering all acceptance criteria)
+- **Learnings for future iterations:**
+  - ActionContext and ActionResult are plain dataclasses (not Pydantic), keeping engine layer lightweight
+  - `register_from_module` uses `inspect.getmembers(module, callable)` to scan for decorated functions
+  - `@register_action` sets `_is_action = True` and `_action_name = func.__name__` on the function object
+  - `list_actions()` returns sorted names for deterministic ordering
+  - Sandbox mode blocks heredoc-style git commits; use inline `-m` flag instead
 ---
