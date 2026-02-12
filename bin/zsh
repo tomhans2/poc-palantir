@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# 这是一个zsh包装器脚本，使用bash作为中介
+# 尝试使用系统的zsh，如果不存在则使用bash
+if [ -f "/bin/zsh" ]; then
+    exec /bin/zsh "$@"
+elif [ -f "/usr/bin/zsh" ]; then
+    exec /usr/bin/zsh "$@"
+elif [ -f "/opt/homebrew/bin/zsh" ]; then
+    exec /opt/homebrew/bin/zsh "$@"
+else
+    # 如果找不到zsh，使用bash作为后备
+    exec /bin/bash "$@"
+fi

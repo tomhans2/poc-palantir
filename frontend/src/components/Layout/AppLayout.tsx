@@ -21,8 +21,8 @@ export function AppLayout() {
   const handleReset = useCallback(async () => {
     setResetting(true);
     try {
-      await resetWorkspace();
-      dispatch({ type: 'RESET' });
+      const graphData = await resetWorkspace();
+      dispatch({ type: 'RESET', payload: { graphData } });
       message.success('已重置工作区');
     } catch {
       message.error('重置失败');
@@ -82,7 +82,7 @@ export function AppLayout() {
         width={400}
         destroyOnClose
       >
-        <FileUploader />
+        <FileUploader onSuccess={() => setUploaderOpen(false)} />
       </Drawer>
     </Layout>
   );

@@ -8,7 +8,7 @@ import type { UploadFile } from 'antd/es/upload/interface';
 
 const { Dragger } = Upload;
 
-export function FileUploader() {
+export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
   const { dispatch } = useWorkspace();
   const [samples, setSamples] = useState<SampleInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -39,6 +39,7 @@ export function FileUploader() {
           },
         });
         message.success('工作区加载成功');
+        onSuccess?.();
       } catch (err: unknown) {
         const msg =
           err instanceof Error ? err.message : '加载失败，请检查 JSON 格式';

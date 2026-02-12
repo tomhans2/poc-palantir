@@ -23,9 +23,19 @@ export function ControlPanel() {
     ? graphData?.nodes.find((n) => n.id === selectedNodeId)
     : null;
 
-  // Filter actions that target the selected node type
+  // Filter actions by node type AND optional match_properties
   const availableActions = selectedNodeType
-    ? actions.filter((a) => a.target_node_type === selectedNodeType)
+    ? actions.filter((a) => {
+        if (a.target_node_type !== selectedNodeType) return false;
+        // If action has match_properties, check that the selected node's
+        // properties contain all specified key-value pairs
+        if (a.match_properties && selectedNode) {
+          return Object.entries(a.match_properties).every(
+            ([key, value]) => selectedNode.properties[key] === value,
+          );
+        }
+        return true;
+      })
     : [];
 
   return (

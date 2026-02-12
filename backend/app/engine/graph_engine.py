@@ -299,14 +299,22 @@ class OntologyEngine:
     # ------------------------------------------------------------------
 
     def get_graph_for_render(self) -> dict[str, Any]:
-        """Export graph data in a frontend-friendly format."""
+        """Export graph data in a frontend-friendly nested format.
+
+        Returns ``{nodes: [{id, type, properties: {...}}, ...], edges: [{source, target, type, properties: {...}}, ...]}``
+        matching the frontend's ``GraphData`` TypeScript type.
+        """
         nodes = []
         for nid, attrs in self.graph.nodes(data=True):
-            nodes.append({"id": nid, **dict(attrs)})
+            node_type = attrs.get("type", "")
+            properties = {k: v for k, v in attrs.items() if k != "type"}
+            nodes.append({"id": nid, "type": node_type, "properties": properties})
 
         edges = []
         for u, v, attrs in self.graph.edges(data=True):
-            edges.append({"source": u, "target": v, **dict(attrs)})
+            edge_type = attrs.get("type", "")
+            properties = {k: v for k, v in attrs.items() if k != "type"}
+            edges.append({"source": u, "target": v, "type": edge_type, "properties": properties})
 
         return {"nodes": nodes, "edges": edges}
 

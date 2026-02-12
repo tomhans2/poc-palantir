@@ -258,19 +258,21 @@ export function GraphCanvas() {
   // When graphData or ontologyDef changes, reload data into graph
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph) return;
+    if (!graph || graph.destroyed) return;
 
     const data = buildG6Data();
     if (!data) return;
 
     graph.setData(data);
-    graph.render();
+    graph
+      .render()
+      .catch((err: unknown) => console.debug('G6 render error:', err));
   }, [state.graphData, state.ontologyDef, buildG6Data]);
 
   // When selectedNodeId changes (and not animating), update element states for highlight
   useEffect(() => {
     const graph = graphRef.current;
-    if (!graph || animatingRef.current) return;
+    if (!graph || graph.destroyed || animatingRef.current) return;
 
     // Ensure graph has rendered data
     let nodeData: NodeData[];
@@ -483,20 +485,29 @@ export function GraphCanvas() {
     [],
   );
 
-  // Show placeholder if no data loaded
-  if (!state.graphData) {
-    return (
-      <div className="panel-placeholder">
-        请上传 JSON 文件或选择内置示例加载图谱
-      </div>
-    );
-  }
-
   return (
-    <div
-      ref={containerRef}
-      style={{ width: '100%', height: '100%' }}
-    />
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      <div
+        ref={containerRef}
+        style={{ width: '100%', height: '100%' }}
+      />
+      {!state.graphData && (
+        <div
+          className="panel-placeholder"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: '#f5f5f5',
+            zIndex: 10,
+          }}
+        >
+          请上传 JSON 文件或选择内置示例加载图谱
+        </div>
+      )}
+    </div>
   );
 }
 

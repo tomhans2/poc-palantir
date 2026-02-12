@@ -84,7 +84,7 @@ export type WorkspaceAction =
         displayName: string;
       };
     }
-  | { type: 'RESET' };
+  | { type: 'RESET'; payload?: { graphData: GraphData } };
 
 // ---- Reducer ----
 
@@ -146,6 +146,8 @@ export function workspaceReducer(
         pendingSimulation: null,
         insights: [...state.insights, ...response.insights],
         simulationHistory: [...state.simulationHistory, entry],
+        // Update graphData with latest node properties from backend
+        graphData: response.updated_graph_data ?? state.graphData,
       };
     }
 
@@ -158,6 +160,7 @@ export function workspaceReducer(
         isSimulating: false,
         simulationHistory: [],
         pendingSimulation: null,
+        graphData: action.payload?.graphData ?? state.graphData,
       };
 
     default:

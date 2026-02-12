@@ -28,6 +28,7 @@ class Action(BaseModel):
     display_name: str
     direct_effect: Optional[DirectEffect] = None
     ripple_rules: list[RippleRule] = []
+    match_properties: Optional[dict[str, Any]] = None
 
 
 class ActionEngine(BaseModel):

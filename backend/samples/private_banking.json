@@ -1,0 +1,701 @@
+{
+  "metadata": {
+    "domain": "private_banking",
+    "version": "1.0",
+    "description": "私行高净值客户经营：张远航家族财富管理沙盘"
+  },
+  "ontology_def": {
+    "node_types": {
+      "Customer": {
+        "label": "高净值客户",
+        "color": "#1890FF",
+        "shape": "circle"
+      },
+      "FamilyTrust": {
+        "label": "家族信托",
+        "color": "#722ED1",
+        "shape": "hexagon"
+      },
+      "BusinessEntity": {
+        "label": "实控企业",
+        "color": "#FA8C16",
+        "shape": "rect"
+      },
+      "AssetPortfolio": {
+        "label": "资产组合",
+        "color": "#13C2C2",
+        "shape": "circle"
+      },
+      "Product": {
+        "label": "金融产品",
+        "color": "#FADB14",
+        "shape": "rect"
+      },
+      "LifeEvent": {
+        "label": "关键事件",
+        "color": "#F5222D",
+        "shape": "diamond"
+      },
+      "PrivateBanker": {
+        "label": "私行经理",
+        "color": "#52C41A",
+        "shape": "circle"
+      },
+      "Competitor": {
+        "label": "竞争机构",
+        "color": "#8C8C8C",
+        "shape": "triangle"
+      }
+    },
+    "edge_types": {
+      "CONTROLS": {
+        "label": "实际控制",
+        "color": "#FA8C16",
+        "style": "solid"
+      },
+      "OWNS_TRUST": {
+        "label": "持有信托",
+        "color": "#722ED1",
+        "style": "solid"
+      },
+      "HAS_PORTFOLIO": {
+        "label": "持有组合",
+        "color": "#13C2C2",
+        "style": "solid"
+      },
+      "MANAGES": {
+        "label": "信托管理",
+        "color": "#722ED1",
+        "style": "dashed"
+      },
+      "HOLDS": {
+        "label": "持有产品",
+        "color": "#FADB14",
+        "style": "dashed"
+      },
+      "INVESTED_IN": {
+        "label": "投资",
+        "color": "#FA8C16",
+        "style": "dashed"
+      },
+      "SUPPLIES_TO": {
+        "label": "供应链",
+        "color": "#52C41A",
+        "style": "dashed"
+      },
+      "SERVED_BY": {
+        "label": "服务关系",
+        "color": "#52C41A",
+        "style": "solid"
+      },
+      "TARGETS": {
+        "label": "竞对目标",
+        "color": "#F5222D",
+        "style": "dashed"
+      },
+      "SPOUSE_OF": {
+        "label": "配偶",
+        "color": "#EB2F96",
+        "style": "solid"
+      },
+      "CHILD_OF": {
+        "label": "子女",
+        "color": "#EB2F96",
+        "style": "dashed"
+      },
+      "TRIGGERS": {
+        "label": "事件触发",
+        "color": "#F5222D",
+        "style": "solid"
+      },
+      "FACES": {
+        "label": "面临事件",
+        "color": "#FF7A45",
+        "style": "dashed"
+      }
+    }
+  },
+  "graph_data": {
+    "nodes": [
+      {
+        "id": "CUST_ZHANG",
+        "type": "Customer",
+        "properties": {
+          "name": "张远航",
+          "age": 45,
+          "aum": 200000000,
+          "risk_level": "MODERATE",
+          "segment": "UHNW",
+          "satisfaction": "HIGH",
+          "occupation": "企业家/CEO",
+          "priority_level": "VIP",
+          "churn_risk": 0.08
+        }
+      },
+      {
+        "id": "CUST_WANG",
+        "type": "Customer",
+        "properties": {
+          "name": "王丽华",
+          "age": 42,
+          "aum": 50000000,
+          "risk_level": "CONSERVATIVE",
+          "segment": "HNW",
+          "satisfaction": "HIGH",
+          "occupation": "全职太太",
+          "priority_level": "VIP"
+        }
+      },
+      {
+        "id": "CUST_SON",
+        "type": "Customer",
+        "properties": {
+          "name": "张思远",
+          "age": 18,
+          "aum": 5000000,
+          "segment": "YOUNG_ELITE",
+          "relation": "长子",
+          "education_plan": "美国本科",
+          "status": "DOMESTIC"
+        }
+      },
+      {
+        "id": "TRUST_ZHANG",
+        "type": "FamilyTrust",
+        "properties": {
+          "name": "张氏家族信托",
+          "scale": 100000000,
+          "status": "ACTIVE",
+          "beneficiaries": "张远航、王丽华、张思远",
+          "established": "2021",
+          "trustee": "XX信托"
+        }
+      },
+      {
+        "id": "BIZ_STAR",
+        "type": "BusinessEntity",
+        "properties": {
+          "name": "星辰科技",
+          "valuation": 800000000,
+          "sector": "人工智能",
+          "ipo_stage": "PREPARING",
+          "annual_revenue": 200000000,
+          "employee_count": 500,
+          "founded": "2015"
+        }
+      },
+      {
+        "id": "BIZ_SUPPLY",
+        "type": "BusinessEntity",
+        "properties": {
+          "name": "星辰供应链",
+          "valuation": 120000000,
+          "sector": "物流科技",
+          "status": "PROFITABLE",
+          "annual_revenue": 80000000
+        }
+      },
+      {
+        "id": "PORT_MAIN",
+        "type": "AssetPortfolio",
+        "properties": {
+          "name": "主力投资组合",
+          "aum": 120000000,
+          "equity_pct": 40,
+          "fixed_income_pct": 30,
+          "alternative_pct": 30,
+          "concentration_risk": "MODERATE",
+          "last_rebalance": "2024-01"
+        }
+      },
+      {
+        "id": "PORT_TRUST",
+        "type": "AssetPortfolio",
+        "properties": {
+          "name": "信托资产组合",
+          "aum": 100000000,
+          "equity_pct": 20,
+          "fixed_income_pct": 50,
+          "alternative_pct": 30,
+          "strategy": "保守增值"
+        }
+      },
+      {
+        "id": "PORT_OFFSHORE",
+        "type": "AssetPortfolio",
+        "properties": {
+          "name": "海外资产组合",
+          "aum": 70000000,
+          "equity_pct": 50,
+          "fixed_income_pct": 30,
+          "alternative_pct": 20,
+          "jurisdiction": "香港/新加坡"
+        }
+      },
+      {
+        "id": "PROD_STRUCT",
+        "type": "Product",
+        "properties": {
+          "name": "智汇结构化票据A",
+          "amount": 20000000,
+          "maturity_date": "2024-06-30",
+          "status": "ACTIVE",
+          "annual_return": 0.065,
+          "issuer": "XX证券"
+        }
+      },
+      {
+        "id": "PROD_PE",
+        "type": "Product",
+        "properties": {
+          "name": "旭日PE基金III期",
+          "amount": 30000000,
+          "lock_end": "2026-12",
+          "status": "ACTIVE",
+          "vintage": "2023",
+          "target_irr": 0.18
+        }
+      },
+      {
+        "id": "PROD_INSURANCE",
+        "type": "Product",
+        "properties": {
+          "name": "鼎峰终身寿险",
+          "coverage": 50000000,
+          "annual_premium": 2000000,
+          "status": "ACTIVE",
+          "beneficiary": "张氏家族信托"
+        }
+      },
+      {
+        "id": "EVT_IPO",
+        "type": "LifeEvent",
+        "properties": {
+          "name": "星辰科技IPO",
+          "subtype": "IPO",
+          "status": "PREPARING",
+          "target_date": "2024-Q3",
+          "expected_valuation": 2000000000,
+          "underwriter": "XX投行"
+        }
+      },
+      {
+        "id": "EVT_PROD_EXPIRE",
+        "type": "LifeEvent",
+        "properties": {
+          "name": "结构化产品到期",
+          "subtype": "PRODUCT_MATURITY",
+          "status": "UPCOMING",
+          "due_date": "2024-06-30",
+          "amount": 20000000
+        }
+      },
+      {
+        "id": "EVT_PB_CHANGE",
+        "type": "LifeEvent",
+        "properties": {
+          "name": "私行经理变动",
+          "subtype": "BANKER_CHANGE",
+          "status": "RUMORED",
+          "risk_level": "HIGH",
+          "successor_ready": false
+        }
+      },
+      {
+        "id": "EVT_CHILD_ABROAD",
+        "type": "LifeEvent",
+        "properties": {
+          "name": "子女海外留学",
+          "subtype": "CHILD_ABROAD",
+          "status": "PLANNING",
+          "destination": "美国",
+          "school_target": "常春藤",
+          "annual_cost_usd": 80000
+        }
+      },
+      {
+        "id": "EVT_DIVORCE",
+        "type": "LifeEvent",
+        "properties": {
+          "name": "婚姻变动风险",
+          "subtype": "DIVORCE",
+          "status": "LATENT",
+          "probability": 0.15,
+          "trigger_signal": "社交动态异常"
+        }
+      },
+      {
+        "id": "EVT_COMPETITOR",
+        "type": "LifeEvent",
+        "properties": {
+          "name": "竞对挖角攻势",
+          "subtype": "COMPETITOR_RAID",
+          "status": "ACTIVE",
+          "source": "汇丰私行",
+          "offer_highlight": "全球资产配置+家族办公室"
+        }
+      },
+      {
+        "id": "PB_CHEN",
+        "type": "PrivateBanker",
+        "properties": {
+          "name": "陈佳琪",
+          "title": "资深私行客户经理",
+          "years_served": 3,
+          "performance": "A+",
+          "clients_managed": 15,
+          "status": "ACTIVE"
+        }
+      },
+      {
+        "id": "COMP_HSBC",
+        "type": "Competitor",
+        "properties": {
+          "name": "汇丰私行",
+          "strategy": "高端离岸",
+          "target_segment": "UHNW",
+          "intensity": "HIGH",
+          "offer": "全球资产配置+家族办公室",
+          "recent_action": "定向邀约高尔夫酒会"
+        }
+      },
+      {
+        "id": "COMP_CITIC",
+        "type": "Competitor",
+        "properties": {
+          "name": "中信私行",
+          "strategy": "信托优势",
+          "target_segment": "HNW",
+          "intensity": "MEDIUM",
+          "offer": "家族信托+保险金信托方案"
+        }
+      }
+    ],
+    "edges": [
+      {"source": "CUST_ZHANG", "target": "BIZ_STAR", "type": "CONTROLS", "properties": {"equity_pct": 0.45, "role": "创始人/CEO"}},
+      {"source": "CUST_ZHANG", "target": "BIZ_SUPPLY", "type": "CONTROLS", "properties": {"equity_pct": 0.80, "role": "实际控制人"}},
+      {"source": "CUST_ZHANG", "target": "TRUST_ZHANG", "type": "OWNS_TRUST", "properties": {"role": "委托人"}},
+      {"source": "CUST_ZHANG", "target": "PORT_MAIN", "type": "HAS_PORTFOLIO", "properties": {}},
+      {"source": "CUST_ZHANG", "target": "PORT_OFFSHORE", "type": "HAS_PORTFOLIO", "properties": {}},
+      {"source": "TRUST_ZHANG", "target": "PORT_TRUST", "type": "MANAGES", "properties": {}},
+      {"source": "PORT_MAIN", "target": "PROD_STRUCT", "type": "HOLDS", "properties": {"allocation": 20000000}},
+      {"source": "PORT_MAIN", "target": "PROD_PE", "type": "HOLDS", "properties": {"allocation": 30000000}},
+      {"source": "PORT_TRUST", "target": "PROD_INSURANCE", "type": "HOLDS", "properties": {"allocation": 50000000}},
+      {"source": "PORT_MAIN", "target": "BIZ_STAR", "type": "INVESTED_IN", "properties": {"amount": 50000000, "type": "直接持股"}},
+      {"source": "BIZ_SUPPLY", "target": "BIZ_STAR", "type": "SUPPLIES_TO", "properties": {"dependency_weight": 0.7}},
+      {"source": "CUST_ZHANG", "target": "PB_CHEN", "type": "SERVED_BY", "properties": {"since": "2021-03"}},
+      {"source": "CUST_WANG", "target": "PB_CHEN", "type": "SERVED_BY", "properties": {"since": "2021-06"}},
+      {"source": "COMP_HSBC", "target": "CUST_ZHANG", "type": "TARGETS", "properties": {"intensity": "HIGH", "since": "2023-06"}},
+      {"source": "COMP_CITIC", "target": "CUST_ZHANG", "type": "TARGETS", "properties": {"intensity": "MEDIUM", "since": "2024-01"}},
+      {"source": "CUST_WANG", "target": "CUST_ZHANG", "type": "SPOUSE_OF", "properties": {"married_since": "2004"}},
+      {"source": "CUST_SON", "target": "CUST_ZHANG", "type": "CHILD_OF", "properties": {}},
+      {"source": "EVT_IPO", "target": "BIZ_STAR", "type": "TRIGGERS", "properties": {}},
+      {"source": "CUST_ZHANG", "target": "EVT_IPO", "type": "FACES", "properties": {}},
+      {"source": "EVT_PROD_EXPIRE", "target": "PROD_STRUCT", "type": "TRIGGERS", "properties": {}},
+      {"source": "CUST_ZHANG", "target": "EVT_PROD_EXPIRE", "type": "FACES", "properties": {}},
+      {"source": "EVT_PB_CHANGE", "target": "PB_CHEN", "type": "TRIGGERS", "properties": {}},
+      {"source": "CUST_ZHANG", "target": "EVT_PB_CHANGE", "type": "FACES", "properties": {}},
+      {"source": "EVT_CHILD_ABROAD", "target": "CUST_SON", "type": "TRIGGERS", "properties": {}},
+      {"source": "CUST_ZHANG", "target": "EVT_CHILD_ABROAD", "type": "FACES", "properties": {}},
+      {"source": "EVT_DIVORCE", "target": "TRUST_ZHANG", "type": "TRIGGERS", "properties": {}},
+      {"source": "CUST_ZHANG", "target": "EVT_DIVORCE", "type": "FACES", "properties": {}},
+      {"source": "CUST_WANG", "target": "EVT_DIVORCE", "type": "FACES", "properties": {}},
+      {"source": "EVT_COMPETITOR", "target": "COMP_HSBC", "type": "TRIGGERS", "properties": {}},
+      {"source": "CUST_ZHANG", "target": "EVT_COMPETITOR", "type": "FACES", "properties": {}}
+    ]
+  },
+  "action_engine": {
+    "actions": [
+      {
+        "action_id": "simulate_ipo_success",
+        "target_node_type": "LifeEvent",
+        "match_properties": {"subtype": "IPO"},
+        "display_name": "模拟: IPO成功上市",
+        "direct_effect": {"property_to_update": "status", "new_value": "COMPLETED_SUCCESS"},
+        "ripple_rules": [
+          {
+            "rule_id": "IPO_S01",
+            "propagation_path": "-[TRIGGERS]-> BusinessEntity",
+            "effect_on_target": {"action_to_trigger": "recalculate_valuation", "parameters": {"shock_factor": 1.5}},
+            "insight_template": "星辰科技IPO成功上市，企业估值跃升至 ¥{target[valuation]:,.0f}，市场信心大幅提振",
+            "insight_type": "event_trigger",
+            "insight_severity": "critical"
+          },
+          {
+            "rule_id": "IPO_S02",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'IPO'",
+            "effect_on_target": {"action_to_trigger": "pb_assess_aum_impact", "parameters": {"event_type": "IPO_SUCCESS", "uplift_factor": 0.8}},
+            "insight_template": "{target[name]} 管理资产规模(AUM)因IPO成功大幅增长至 ¥{target[aum]:,.0f}，客户分层需重新评估",
+            "insight_type": "quantitative_impact",
+            "insight_severity": "critical"
+          },
+          {
+            "rule_id": "IPO_S03",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'IPO'",
+            "effect_on_target": {"action_to_trigger": "pb_concentration_risk_check", "parameters": {"threshold": 0.4}},
+            "insight_template": "资产集中度预警: {target[name]} 的单一企业敞口占AUM比例为 {target[concentration_ratio]:.1%}，集中度风险 {target[concentration_risk]}，需启动分散化投资方案",
+            "insight_type": "risk_propagation",
+            "insight_severity": "warning"
+          },
+          {
+            "rule_id": "IPO_S04",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'IPO'",
+            "effect_on_target": {"action_to_trigger": "pb_detect_competitor_threat", "parameters": {"event_type": "IPO_SUCCESS"}},
+            "insight_template": "网络分析: {target[name]} AUM暴增后竞争威胁评级升至 {target[competitor_threat]}(威胁分 {target[threat_score]})，{target[competitor_count]} 家竞对在积极争夺",
+            "insight_type": "network_analysis",
+            "insight_severity": "warning"
+          },
+          {
+            "rule_id": "IPO_S05",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'IPO'",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "priority_level", "value": "SUPER_VIP"}},
+            "insight_template": "建议: 将 {target[name]} 升级为 SUPER_VIP 客户，配置家族办公室级别服务，包括: IPO后减持规划、税务优化方案、慈善基金设立、锁定期资产管理",
+            "insight_type": "recommendation",
+            "insight_severity": "info"
+          }
+        ]
+      },
+      {
+        "action_id": "simulate_ipo_failure",
+        "target_node_type": "LifeEvent",
+        "match_properties": {"subtype": "IPO"},
+        "display_name": "模拟: IPO受阻失败",
+        "direct_effect": {"property_to_update": "status", "new_value": "FAILED"},
+        "ripple_rules": [
+          {
+            "rule_id": "IPO_F01",
+            "propagation_path": "-[TRIGGERS]-> BusinessEntity",
+            "effect_on_target": {"action_to_trigger": "adjust_numeric", "parameters": {"property": "valuation", "factor": 0.6}},
+            "insight_template": "星辰科技IPO受阻，企业估值下调至 ¥{target[valuation]:,.0f}，市场信心受损，PE基金退出时间表需重新评估",
+            "insight_type": "quantitative_impact",
+            "insight_severity": "critical"
+          },
+          {
+            "rule_id": "IPO_F02",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'IPO'",
+            "effect_on_target": {"action_to_trigger": "adjust_numeric", "parameters": {"property": "aum", "factor": 0.85}},
+            "insight_template": "{target[name]} 管理资产因IPO失败缩水至 ¥{target[aum]:,.0f}，需重新评估投资组合和服务方案",
+            "insight_type": "quantitative_impact",
+            "insight_severity": "warning"
+          },
+          {
+            "rule_id": "IPO_F03",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'IPO'",
+            "effect_on_target": {"action_to_trigger": "update_risk_status", "parameters": {"status": "ELEVATED"}},
+            "insight_template": "{target[name]} 风险等级上调至 ELEVATED — 企业估值不确定性增加，叠加PE基金退出困难，整体资产质量承压",
+            "insight_type": "risk_propagation",
+            "insight_severity": "warning"
+          },
+          {
+            "rule_id": "IPO_F04",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'IPO'",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "sentiment", "value": "NEGATIVE"}},
+            "insight_template": "建议: 立即安排资深合伙人与 {target[name]} 面谈，提供情绪安抚与专业支持。方案包括: ① 替代退出路径(并购/二级市场) ② 追加抵质押融资方案 ③ 税务亏损对冲策略",
+            "insight_type": "recommendation",
+            "insight_severity": "info"
+          }
+        ]
+      },
+      {
+        "action_id": "trigger_product_maturity",
+        "target_node_type": "LifeEvent",
+        "match_properties": {"subtype": "PRODUCT_MATURITY"},
+        "display_name": "触发: 产品到期清算",
+        "direct_effect": {"property_to_update": "status", "new_value": "MATURED"},
+        "ripple_rules": [
+          {
+            "rule_id": "PM_01",
+            "propagation_path": "-[TRIGGERS]-> Product",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "status", "value": "MATURED"}},
+            "insight_template": "金融产品 {target[name]} 已到期，本金 ¥{target[amount]:,.0f} 待回收再配置",
+            "insight_type": "event_trigger",
+            "insight_severity": "info"
+          },
+          {
+            "rule_id": "PM_02",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'PRODUCT_MATURITY'",
+            "effect_on_target": {"action_to_trigger": "pb_compute_reinvestment", "parameters": {"amount_property": "aum", "reinvest_ratio": 0.1}},
+            "insight_template": "{target[name]} 有 ¥{target[reinvestment_need]:,.0f} 到期资金需要再配置。当前市场建议: 增配固收+产品对冲权益波动",
+            "insight_type": "quantitative_impact",
+            "insight_severity": "warning"
+          },
+          {
+            "rule_id": "PM_03",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'PRODUCT_MATURITY'",
+            "effect_on_target": {"action_to_trigger": "pb_detect_competitor_threat", "parameters": {"event_type": "PRODUCT_MATURITY"}},
+            "insight_template": "风险提示: 产品到期窗口期是竞对切入的黄金时机，{target[name]} 可能收到 {target[competitor_count]} 家竞对的替代产品报价",
+            "insight_type": "network_analysis",
+            "insight_severity": "warning"
+          },
+          {
+            "rule_id": "PM_04",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'PRODUCT_MATURITY'",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "contact_urgency", "value": "HIGH"}},
+            "insight_template": "建议: 到期前两周主动联系 {target[name]}，准备3套再投资方案(保守/稳健/积极)。重点推荐: ① 新一期结构化产品(6.8%预期) ② 固收增强策略 ③ 量化对冲基金",
+            "insight_type": "recommendation",
+            "insight_severity": "info"
+          }
+        ]
+      },
+      {
+        "action_id": "trigger_pb_departure",
+        "target_node_type": "LifeEvent",
+        "match_properties": {"subtype": "BANKER_CHANGE"},
+        "display_name": "模拟: 私行经理离职",
+        "direct_effect": {"property_to_update": "status", "new_value": "CONFIRMED"},
+        "ripple_rules": [
+          {
+            "rule_id": "PB_01",
+            "propagation_path": "-[TRIGGERS]-> PrivateBanker",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "status", "value": "DEPARTED"}},
+            "insight_template": "资深私行经理 {target[name]} 确认离职（绩效评级 {target[performance]}），其管理的 {target[clients_managed]} 位客户关系面临断裂风险",
+            "insight_type": "event_trigger",
+            "insight_severity": "critical"
+          },
+          {
+            "rule_id": "PB_02",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'BANKER_CHANGE'",
+            "effect_on_target": {"action_to_trigger": "pb_compute_churn_risk", "parameters": {"base_risk": 0.3, "tenure_factor": 0.03, "competitive_factor": 0.15}},
+            "insight_template": "{target[name]} 客户流失风险升至 {target[churn_risk_level]}（概率 {target[churn_risk]:.1%}），该客户AUM ¥{target[aum]:,.0f}，流失将造成重大损失",
+            "insight_type": "risk_propagation",
+            "insight_severity": "critical"
+          },
+          {
+            "rule_id": "PB_03",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'BANKER_CHANGE'",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "satisfaction", "value": "AT_RISK"}},
+            "insight_template": "{target[name]} 客户满意度下调至 AT_RISK，与原经理3年深度信任关系面临断裂",
+            "insight_type": "risk_propagation",
+            "insight_severity": "warning"
+          },
+          {
+            "rule_id": "PB_04",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'BANKER_CHANGE'",
+            "effect_on_target": {"action_to_trigger": "pb_assess_retention_action", "parameters": {"urgency": "IMMEDIATE"}},
+            "insight_template": "紧急建议: ① 分行长24小时内亲自致电 {target[name]} ② 安排同级别或更资深经理接任 ③ 提供3个月费率优惠过渡期 ④ 邀请参加行长私享晚宴(挽留预算 ¥{target[retention_budget]:,.0f})",
+            "insight_type": "recommendation",
+            "insight_severity": "critical"
+          }
+        ]
+      },
+      {
+        "action_id": "trigger_child_abroad",
+        "target_node_type": "LifeEvent",
+        "match_properties": {"subtype": "CHILD_ABROAD"},
+        "display_name": "确认: 子女海外留学",
+        "direct_effect": {"property_to_update": "status", "new_value": "CONFIRMED"},
+        "ripple_rules": [
+          {
+            "rule_id": "CA_01",
+            "propagation_path": "-[TRIGGERS]-> Customer",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "status", "value": "ABROAD_PREPARING"}},
+            "insight_template": "{target[name]} 确认赴海外留学(目标: {target[education_plan]})，将触发一系列跨境金融服务需求",
+            "insight_type": "event_trigger",
+            "insight_severity": "info"
+          },
+          {
+            "rule_id": "CA_02",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'CHILD_ABROAD'",
+            "effect_on_target": {"action_to_trigger": "pb_assess_offshore_demand", "parameters": {"annual_cost": 500000}},
+            "insight_template": "{target[name]} 海外教育支出需求: 预计年度费用约 ¥{target[estimated_annual_outflow]:,.0f}(学费+生活)，五年总规划需 ¥{target[estimated_annual_outflow]:,.0f}×5 的外汇储备",
+            "insight_type": "quantitative_impact",
+            "insight_severity": "warning"
+          },
+          {
+            "rule_id": "CA_03",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'CHILD_ABROAD'",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "cross_border_need", "value": "HIGH"}},
+            "insight_template": "建议为 {target[name]} 打包跨境金融方案: ① 海外教育金专户 ② 外汇分批购汇计划 ③ 海外房产按揭(学区) ④ 留学责任保险 ⑤ 海外信用卡(子女附属卡)",
+            "insight_type": "recommendation",
+            "insight_severity": "info"
+          }
+        ]
+      },
+      {
+        "action_id": "trigger_divorce",
+        "target_node_type": "LifeEvent",
+        "match_properties": {"subtype": "DIVORCE"},
+        "display_name": "模拟: 婚姻变动(离婚)",
+        "direct_effect": {"property_to_update": "status", "new_value": "INITIATED"},
+        "ripple_rules": [
+          {
+            "rule_id": "DV_01",
+            "propagation_path": "-[TRIGGERS]-> FamilyTrust",
+            "effect_on_target": {"action_to_trigger": "pb_divorce_asset_impact", "parameters": {"split_ratio": 0.5}},
+            "insight_template": "家族信托 {target[name]} 面临审查，信托资产保护率 {target[protection_rate]:.0%}，约 ¥{target[at_risk_amount]:,.0f} 资产存在分割风险，信托规模调整至 ¥{target[scale]:,.0f}",
+            "insight_type": "quantitative_impact",
+            "insight_severity": "critical"
+          },
+          {
+            "rule_id": "DV_02",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'DIVORCE'",
+            "effect_on_target": {"action_to_trigger": "update_risk_status", "parameters": {"status": "HIGH_RISK"}},
+            "insight_template": "{target[name]} 风险等级升至 HIGH_RISK — 婚姻变动可能引发: 资产分割、企业股权变动、情绪波动导致非理性投资决策",
+            "insight_type": "risk_propagation",
+            "insight_severity": "critical"
+          },
+          {
+            "rule_id": "DV_03",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'DIVORCE'",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "asset_protection_need", "value": "URGENT"}},
+            "insight_template": "紧急建议: ① 审查信托架构隔离效力 ② 评估婚前/婚后财产界定 ③ 企业股权代持安排 ④ 境外资产保全 ⑤ 安排家族法律顾问(需最高保密级别处理)",
+            "insight_type": "recommendation",
+            "insight_severity": "critical"
+          }
+        ]
+      },
+      {
+        "action_id": "trigger_competitor_raid",
+        "target_node_type": "LifeEvent",
+        "match_properties": {"subtype": "COMPETITOR_RAID"},
+        "display_name": "模拟: 竞对挖角攻势",
+        "direct_effect": {"property_to_update": "status", "new_value": "INTENSIFIED"},
+        "ripple_rules": [
+          {
+            "rule_id": "CR_01",
+            "propagation_path": "-[TRIGGERS]-> Competitor",
+            "effect_on_target": {"action_to_trigger": "set_property", "parameters": {"property": "intensity", "value": "VERY_HIGH"}},
+            "insight_template": "{target[name]} 升级客户争夺力度至 VERY_HIGH，正以「{target[offer]}」方案发起攻势",
+            "insight_type": "event_trigger",
+            "insight_severity": "warning"
+          },
+          {
+            "rule_id": "CR_02",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'COMPETITOR_RAID'",
+            "effect_on_target": {"action_to_trigger": "pb_compute_churn_risk", "parameters": {"base_risk": 0.25, "tenure_factor": 0.03, "competitive_factor": 0.2}},
+            "insight_template": "{target[name]} 流失风险评级: {target[churn_risk_level]}（概率 {target[churn_risk]:.1%}）— 竞对以高端服务+费率优势持续渗透",
+            "insight_type": "risk_propagation",
+            "insight_severity": "critical"
+          },
+          {
+            "rule_id": "CR_03",
+            "propagation_path": "<-[FACES]- Customer",
+            "condition": "source.get('subtype') == 'COMPETITOR_RAID'",
+            "effect_on_target": {"action_to_trigger": "pb_assess_retention_action", "parameters": {"urgency": "IMMEDIATE"}},
+            "insight_template": "紧急挽留方案(预算 ¥{target[retention_budget]:,.0f}): ① 专属投资通道(Pre-IPO/定增) ② 管理费率下浮30% ③ 高管私享会邀请 ④ 家族传承规划增值服务 ⑤ 子女实习推荐",
+            "insight_type": "recommendation",
+            "insight_severity": "critical"
+          }
+        ]
+      }
+    ]
+  }
+}

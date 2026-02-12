@@ -21,8 +21,27 @@ class DeltaGraph(BaseModel):
     highlight_edges: list[dict[str, Any]] = []
 
 
+class GraphNodeData(BaseModel):
+    id: str
+    type: str
+    properties: dict[str, Any] = {}
+
+
+class GraphEdgeData(BaseModel):
+    source: str
+    target: str
+    type: str
+    properties: dict[str, Any] = {}
+
+
+class GraphData(BaseModel):
+    nodes: list[GraphNodeData] = []
+    edges: list[GraphEdgeData] = []
+
+
 class SimulateResponse(BaseModel):
     status: str
     delta_graph: DeltaGraph
     ripple_path: list[str] = []
     insights: list[InsightItem] = []
+    updated_graph_data: Optional[GraphData] = None

@@ -68,6 +68,7 @@ export interface Action {
   display_name: string;
   direct_effect?: DirectEffect;
   ripple_rules: RippleRule[];
+  match_properties?: Record<string, unknown>;
 }
 
 export interface ActionEngine {
@@ -119,6 +120,7 @@ export interface SimulateResponse {
   delta_graph: DeltaGraph;
   ripple_path: string[];
   insights: InsightItem[];
+  updated_graph_data?: GraphData;
 }
 
 export interface RegisteredFunction {

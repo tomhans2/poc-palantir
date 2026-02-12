@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { LoadResponse, SimulateResponse, SampleInfo } from '../types';
+import type { LoadResponse, SimulateResponse, SampleInfo, GraphData } from '../types';
 
 const api = axios.create({
   baseURL: '/api/v1/workspace',
@@ -42,8 +42,8 @@ export async function simulate(
 /**
  * Reset the workspace to its initial state.
  */
-export async function resetWorkspace(): Promise<unknown> {
-  const { data } = await api.post('/reset');
+export async function resetWorkspace(): Promise<GraphData> {
+  const { data } = await api.post<GraphData>('/reset');
   return data;
 }
 

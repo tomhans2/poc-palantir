@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from app.actions import action_functions
 from app.engine.graph_engine import OntologyEngine
-from app.models.api import SimulateRequest, SimulateResponse, InsightItem, DeltaGraph
+from app.models.api import SimulateRequest, SimulateResponse, InsightItem, DeltaGraph, GraphData
 from app.models.workspace import WorkspaceConfig
 
 logger = logging.getLogger(__name__)
@@ -224,11 +224,15 @@ async def simulate(request: SimulateRequest) -> SimulateResponse:
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("message", "Action execution failed"))
 
+    # Get the latest graph data after simulation (reflects updated properties)
+    updated_graph = engine.get_graph_for_render()
+
     return SimulateResponse(
         status=result["status"],
         delta_graph=DeltaGraph(**result["delta_graph"]),
         ripple_path=result.get("ripple_path", []),
         insights=[InsightItem(**i) for i in result.get("insights", [])],
+        updated_graph_data=GraphData(**updated_graph),
     )
 
 
