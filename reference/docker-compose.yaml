@@ -1,0 +1,640 @@
+version: "3.8"
+
+services:
+  traefik:
+    image: traefik:v3.2
+    command:
+      # 静态配置参数
+      - --global.checkNewVersion=false
+      - --global.sendAnonymousUsage=false
+      
+      # API和Dashboard
+      - --api=true
+      - --api.dashboard=true
+      - --api.insecure=false
+      
+      # 健康检查
+      - --ping=true
+      
+      # 日志配置
+      - --log.level=INFO
+      - --log.format=json
+      - --log.filePath=/var/log/traefik/traefik.log
+      
+      # 访问日志
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.filepath=/var/log/traefik/access.log
+      
+      # 入口点配置
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.web.http.redirections.entrypoint.permanent=true
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls=true
+      
+      # Swarm Provider配置 - Traefik v3使用独立的Swarm Provider
+      - --providers.swarm=true
+      - --providers.swarm.endpoint=unix:///var/run/docker.sock
+      - --providers.swarm.exposedByDefault=false
+      - --providers.swarm.network=tomhanfriends
+      - --providers.swarm.refreshSeconds=15
+      - --providers.swarm.watch=true
+      
+      # 支持多域名证书（tomhanfriends.com 和 shujuren.net）
+      - --certificatesresolvers.shujuren.acme.email=tom.han@tomhanfriends.com
+      - --certificatesresolvers.shujuren.acme.storage=/letsencrypt/acme-shujuren.json
+      - --certificatesresolvers.shujuren.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
+      - --certificatesresolvers.shujuren.acme.keytype=EC256
+      - --certificatesresolvers.shujuren.acme.dnschallenge=true
+      - --certificatesresolvers.shujuren.acme.dnschallenge.provider=tencentcloud
+      - --certificatesresolvers.shujuren.acme.dnschallenge.delaybeforecheck=100
+      - --certificatesresolvers.shujuren.acme.dnschallenge.disablepropagationcheck=true
+      - --certificatesresolvers.shujuren.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53,119.29.29.29:53
+      
+      # ACME证书配置 - 腾讯云DNS
+      - --certificatesresolvers.tencentcloud.acme.email=tom.han@tomhanfriends.com
+      - --certificatesresolvers.tencentcloud.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.tencentcloud.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
+      - --certificatesresolvers.tencentcloud.acme.keytype=EC256
+      - --certificatesresolvers.tencentcloud.acme.dnschallenge=true
+      - --certificatesresolvers.tencentcloud.acme.dnschallenge.provider=tencentcloud
+      - --certificatesresolvers.tencentcloud.acme.dnschallenge.delaybeforecheck=100
+      - --certificatesresolvers.tencentcloud.acme.dnschallenge.disablepropagationcheck=true
+      - --certificatesresolvers.tencentcloud.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53,119.29.29.29:53
+      
+      # Metrics配置
+      - --metrics.prometheus=true
+      - --metrics.prometheus.addEntryPointsLabels=true
+      - --metrics.prometheus.addServicesLabels=true
+    
+    environment:
+      - TENCENTCLOUD_SECRET_ID=${TENCENTCLOUD_SECRET_ID}
+      - TENCENTCLOUD_SECRET_KEY=${TENCENTCLOUD_SECRET_KEY}
+    
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: 443
+        protocol: tcp
+        mode: host
+    
+    volumes:
+      # Docker socket - 必须只读挂载
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Let's Encrypt证书存储
+      - /mnt/cfs/tomhanfriends_letsencrypt:/letsencrypt
+      # 日志目录
+      - /mnt/cfs/tomhanfriends_traefik-logs:/var/log/traefik
+    
+    networks:
+      - tomhanfriends
+      - shujuren  # 连接到 shujuren 网络以路由其服务
+      - zhaozhaotu
+      - dataops
+      - iconsultant
+    
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    
+    deploy:
+      mode: replicated
+      replicas: 1
+      
+      # 核心标签配置 - 在Swarm模式下必须在deploy.labels下
+      labels:
+        # 启用Traefik
+        - "traefik.enable=true"
+        
+        # 定义基础安全头中间件
+        - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
+        - "traefik.http.middlewares.security-headers.headers.browserXssFilter=true"
+        - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
+        - "traefik.http.middlewares.security-headers.headers.forceSTSHeader=true"
+        - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
+        - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
+        
+        # 定义速率限制中间件
+        - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
+        - "traefik.http.middlewares.rate-limit.ratelimit.burst=50"
+        
+        # 定义压缩中间件
+        - "traefik.http.middlewares.compression.compress=true"
+        
+        # 定义安全链中间件（组合基础安全功能）
+        - "traefik.http.middlewares.secured.chain.middlewares=security-headers,compression,rate-limit"
+        
+        # Dashboard路由配置 - 使用简单的Header认证
+        - "traefik.http.routers.traefik-api.rule=Host(`traefik.tomhanfriends.com`) && Header(`Authorization`,`oMmw9Gg7`)"
+        - "traefik.http.routers.traefik-api.entrypoints=websecure"
+        - "traefik.http.routers.traefik-api.tls=true"
+        - "traefik.http.routers.traefik-api.tls.certresolver=tencentcloud"
+        - "traefik.http.routers.traefik-api.service=api@internal"
+        - "traefik.http.routers.traefik-api.middlewares=secured"
+        
+        # 关键：Swarm模式下必须显式指定服务端口
+        - "traefik.http.services.traefik-api.loadbalancer.server.port=8080"
+      
+      # 节点放置约束 - 仅在manager节点上部署
+      placement:
+        constraints:
+          - node.role == manager
+        preferences:
+          # 分散到不同的manager节点
+          - spread: node.id
+        max_replicas_per_node: 1
+      
+      # 资源限制
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      
+      # 重启策略
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      
+      # 更新配置 - 滚动更新
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+        max_failure_ratio: 0.3
+        order: start-first
+      
+      # 回滚配置
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: pause
+        monitor: 60s
+        max_failure_ratio: 0.3
+        order: start-first
+
+  # One API - LLM API 管理和分发系统
+  oneapi:
+    image: justsong/one-api:latest
+    command: --log-dir /app/logs
+    
+    volumes:
+      - /mnt/cfs/tomhanfriends_oneapi_data:/data
+      - /mnt/cfs/tomhanfriends_oneapi_logs:/app/logs
+    
+    environment:
+      # 注意：密码中的 @ 符号需要 URL 编码为 %40
+      - SQL_DSN=oneapi:oneapiABC123@tcp(172.21.16.17:3306)/oneapi
+      - REDIS_CONN_STRING=redis://oneapi-redis:6379
+      - SESSION_SECRET=oMmw9Gg7_random_secret_string_2024
+      - TZ=Asia/Shanghai
+      - NODE_TYPE=master
+      # 可选配置
+      # - CHANNEL_TEST_FREQUENCY=1440  # 每24小时检查一次渠道
+      # - POLLING_INTERVAL=5  # 批量更新时的请求间隔（秒）
+    
+    networks:
+      - tomhanfriends
+      - shujuren
+      - zhaozhaotu
+      - iconsultant
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -o '\"success\":\\s*true' | awk -F: '{print $$2}'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    depends_on:
+      - oneapi-redis
+    
+    deploy:
+      mode: replicated
+      replicas: 2
+      
+      labels:
+        # 启用 Traefik
+        - "traefik.enable=true"
+        
+        # 服务配置
+        - "traefik.http.services.oneapi.loadbalancer.server.port=3000"
+        
+        # Sticky Session 配置（重要：确保用户会话一致性）
+        - "traefik.http.services.oneapi.loadbalancer.sticky.cookie=true"
+        - "traefik.http.services.oneapi.loadbalancer.sticky.cookie.name=oneapi_sticky"
+        - "traefik.http.services.oneapi.loadbalancer.sticky.cookie.secure=true"
+        - "traefik.http.services.oneapi.loadbalancer.sticky.cookie.httpOnly=true"
+        - "traefik.http.services.oneapi.loadbalancer.sticky.cookie.sameSite=strict"
+        
+        # 健康检查
+        - "traefik.http.services.oneapi.loadbalancer.healthcheck.path=/api/status"
+        - "traefik.http.services.oneapi.loadbalancer.healthcheck.interval=30s"
+        - "traefik.http.services.oneapi.loadbalancer.healthcheck.timeout=5s"
+        - "traefik.http.services.oneapi.loadbalancer.healthcheck.scheme=http"
+        
+        # 中间件 1: 安全头配置
+        - "traefik.http.middlewares.oneapi-security-headers.headers.frameDeny=true"
+        - "traefik.http.middlewares.oneapi-security-headers.headers.browserXssFilter=true"
+        - "traefik.http.middlewares.oneapi-security-headers.headers.contentTypeNosniff=true"
+        - "traefik.http.middlewares.oneapi-security-headers.headers.forceSTSHeader=true"
+        - "traefik.http.middlewares.oneapi-security-headers.headers.stsSeconds=31536000"
+        - "traefik.http.middlewares.oneapi-security-headers.headers.stsIncludeSubdomains=true"
+        - "traefik.http.middlewares.oneapi-security-headers.headers.stsPreload=true"
+        - "traefik.http.middlewares.oneapi-security-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+        - "traefik.http.middlewares.oneapi-security-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
+        - "traefik.http.middlewares.oneapi-security-headers.headers.customRequestHeaders.X-Forwarded-Proto=https"
+        
+        # 中间件 2: 压缩配置
+        - "traefik.http.middlewares.oneapi-compression.compress=true"
+        
+        # 中间件 3: 速率限制配置
+        - "traefik.http.middlewares.oneapi-ratelimit.ratelimit.average=100"
+        - "traefik.http.middlewares.oneapi-ratelimit.ratelimit.burst=50"
+        - "traefik.http.middlewares.oneapi-ratelimit.ratelimit.period=1m"
+        
+        # 中间件链：组合所有中间件
+        - "traefik.http.middlewares.oneapi-chain.chain.middlewares=oneapi-security-headers,oneapi-compression,oneapi-ratelimit"
+        
+        # HTTP 路由配置
+        - "traefik.http.routers.oneapi.rule=Host(`oneapi.tomhanfriends.com`)"
+        - "traefik.http.routers.oneapi.entrypoints=websecure"
+        - "traefik.http.routers.oneapi.tls=true"
+        - "traefik.http.routers.oneapi.tls.certresolver=tencentcloud"
+        - "traefik.http.routers.oneapi.service=oneapi"
+        - "traefik.http.routers.oneapi.middlewares=oneapi-chain"
+      
+      placement:
+        constraints:
+          - node.role == worker
+        max_replicas_per_node: 1
+      
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+        order: start-first
+      
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: pause
+        order: start-first
+
+  # Redis for One API
+  oneapi-redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    
+    volumes:
+      - /mnt/cfs/tomhanfriends_oneapi_redis:/data
+    
+    networks:
+      - tomhanfriends
+      - shujuren
+      - zhaozhaotu
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    
+    deploy:
+      mode: replicated
+      replicas: 1
+      
+      placement:
+        constraints:
+          - node.role == worker
+      
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+      
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  # WeRSS - 微信公众号订阅助手
+  # werss:
+  #   image: rachelos/we-mp-rss:latest
+    
+  #   environment:
+  #     # 基础配置
+  #     - APP_NAME=we-mp-rss
+  #     - SERVER_NAME=we-mp-rss
+  #     - WEB_NAME=WeRSS微信公众号订阅助手
+  #     - TZ=Asia/Shanghai
+      
+  #     # 数据库配置 - 使用外部MySQL数据库
+  #     # 格式: mysql+pymysql://<username>:<password>@<host>/<database>?charset=utf8mb4
+  #     # 注意：密码中的特殊字符需要URL编码，@ 编码为 %40
+  #     - DB=mysql+pymysql://werss:werssABC123@172.21.16.17:3306/werss?charset=utf8mb4
+      
+  #     # 安全配置
+  #     - SECRET_KEY=werss_tomhanfriends_2024_secret_key
+  #     - TOKEN_EXPIRE_MINUTES=4320
+  #     - SAFE_LIC_KEY=TOMHANFRIENDS
+      
+  #     # 服务配置
+  #     - PORT=8001
+  #     - DEBUG=False
+  #     - AUTO_RELOAD=False
+  #     - THREADS=4
+      
+  #     # 定时任务配置
+  #     - ENABLE_JOB=True
+  #     - SPAN_INTERVAL=300
+      
+  #     # RSS配置
+  #     - RSS_BASE_URL=https://werss.tomhanfriends.com
+  #     - RSS_LOCAL=False
+  #     - RSS_TITLE=TomHanFriends微信公众号订阅
+  #     - RSS_DESCRIPTION=微信公众号RSS订阅服务
+  #     - RSS_FULL_CONTEXT=True
+  #     - RSS_ADD_COVER=True
+  #     - RSS_CDATA=False
+  #     - RSS_PAGE_SIZE=30
+      
+  #     # 采集配置
+  #     - MAX_PAGE=9
+  #     - GATHER.CONTENT=True
+  #     - GATHER.MODEL=app
+  #     - GATHER.CONTENT_AUTO_CHECK=True
+  #     - GATHER.CONTENT_AUTO_INTERVAL=59
+  #     - GATHER.CONTENT_MODE=web
+      
+  #     # 文章配置
+  #     - ARTICLE.TRUE_DELETE=False
+      
+  #     # 导出配置
+  #     - EXPORT_PDF=True
+  #     - EXPORT_PDF_DIR=/data/pdf
+  #     - EXPORT_MARKDOWN=True
+  #     - EXPORT_MARKDOWN_DIR=/data/markdown
+      
+  #     # 缓存配置
+  #     - CACHE.DIR=/data/cache
+      
+  #     # 通知配置（可选，根据需要配置）
+  #     - SEND_CODE=True
+  #     - CODE_TITLE=WeRSS授权二维码
+  #     # - DINGDING_WEBHOOK=
+  #     # - WECHAT_WEBHOOK=
+  #     # - FEISHU_WEBHOOK=
+  #     # - CUSTOM_WEBHOOK=
+      
+  #     # Webhook配置
+  #     - WEBHOOK.CONTENT_FORMAT=html
+      
+  #     # 日志配置
+  #     # - LOG_FILE=/data/logs/werss.log
+  #     - LOG_LEVEL=INFO
+      
+  #     # 安全配置
+  #     - SAFE_HIDE_CONFIG=db,secret,token,notice.wechat,notice.feishu,notice.dingding
+      
+  #     # User Agent
+  #     - USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36/WeRss
+    
+  #   volumes:
+  #     # 数据持久化目录
+  #     - /mnt/cfs/tomhanfriends_werss_data:/data
+    
+  #   networks:
+  #     - tomhanfriends
+    
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "wget -q -O - http://localhost:8001/api/health || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+    
+  #   deploy:
+  #     mode: replicated
+  #     replicas: 2
+      
+  #     labels:
+  #       # 启用 Traefik
+  #       - "traefik.enable=true"
+        
+  #       # 服务配置
+  #       - "traefik.http.services.werss.loadbalancer.server.port=8001"
+        
+  #       # Sticky Session 配置（重要：确保扫码登录等会话一致性）
+  #       - "traefik.http.services.werss.loadbalancer.sticky.cookie=true"
+  #       - "traefik.http.services.werss.loadbalancer.sticky.cookie.name=werss_sticky"
+  #       - "traefik.http.services.werss.loadbalancer.sticky.cookie.secure=true"
+  #       - "traefik.http.services.werss.loadbalancer.sticky.cookie.httpOnly=true"
+  #       - "traefik.http.services.werss.loadbalancer.sticky.cookie.sameSite=lax"
+        
+  #       # 健康检查
+  #       - "traefik.http.services.werss.loadbalancer.healthcheck.path=/api/health"
+  #       - "traefik.http.services.werss.loadbalancer.healthcheck.interval=30s"
+  #       - "traefik.http.services.werss.loadbalancer.healthcheck.timeout=5s"
+  #       - "traefik.http.services.werss.loadbalancer.healthcheck.scheme=http"
+        
+  #       # 中间件 1: 安全头配置
+  #       - "traefik.http.middlewares.werss-security-headers.headers.frameDeny=true"
+  #       - "traefik.http.middlewares.werss-security-headers.headers.browserXssFilter=true"
+  #       - "traefik.http.middlewares.werss-security-headers.headers.contentTypeNosniff=true"
+  #       - "traefik.http.middlewares.werss-security-headers.headers.forceSTSHeader=true"
+  #       - "traefik.http.middlewares.werss-security-headers.headers.stsSeconds=31536000"
+  #       - "traefik.http.middlewares.werss-security-headers.headers.stsIncludeSubdomains=true"
+  #       - "traefik.http.middlewares.werss-security-headers.headers.stsPreload=true"
+  #       - "traefik.http.middlewares.werss-security-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+  #       - "traefik.http.middlewares.werss-security-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
+  #       - "traefik.http.middlewares.werss-security-headers.headers.customRequestHeaders.X-Forwarded-Proto=https"
+        
+  #       # 中间件 2: 压缩配置
+  #       - "traefik.http.middlewares.werss-compression.compress=true"
+        
+  #       # 中间件 3: 速率限制配置（公众号采集服务，适度放宽限制）
+  #       - "traefik.http.middlewares.werss-ratelimit.ratelimit.average=200"
+  #       - "traefik.http.middlewares.werss-ratelimit.ratelimit.burst=100"
+  #       - "traefik.http.middlewares.werss-ratelimit.ratelimit.period=1m"
+        
+  #       # 中间件链：组合所有中间件
+  #       - "traefik.http.middlewares.werss-chain.chain.middlewares=werss-security-headers,werss-compression,werss-ratelimit"
+        
+  #       # HTTP 路由配置
+  #       - "traefik.http.routers.werss.rule=Host(`werss.tomhanfriends.com`)"
+  #       - "traefik.http.routers.werss.entrypoints=websecure"
+  #       - "traefik.http.routers.werss.tls=true"
+  #       - "traefik.http.routers.werss.tls.certresolver=tencentcloud"
+  #       - "traefik.http.routers.werss.service=werss"
+  #       - "traefik.http.routers.werss.middlewares=werss-chain"
+      
+  #     placement:
+  #       constraints:
+  #         - node.role == worker
+  #       max_replicas_per_node: 1
+      
+  #     resources:
+  #       limits:
+  #         cpus: '1.0'
+  #         memory: 1G
+  #       reservations:
+  #         cpus: '0.25'
+  #         memory: 256M
+      
+  #     restart_policy:
+  #       condition: on-failure
+  #       delay: 5s
+  #       max_attempts: 3
+  #       window: 120s
+      
+  #     update_config:
+  #       parallelism: 1
+  #       delay: 10s
+  #       failure_action: rollback
+  #       monitor: 60s
+  #       order: start-first
+      
+  #     rollback_config:
+  #       parallelism: 1
+  #       delay: 5s
+  #       failure_action: pause
+  #       order: start-first
+
+  # DPanel - Docker 管理面板
+  dpanel:
+    image: dpanel/dpanel:lite
+    
+    environment:
+      - APP_NAME=dpanel
+      - TZ=Asia/Shanghai
+    
+    volumes:
+      # Docker socket - 只读挂载以增强安全性
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # DPanel 数据目录
+      - /mnt/cfs/tomhanfriends_dpanel:/dpanel
+    
+    networks:
+      - tomhanfriends
+      - shujuren
+      - zhaozhaotu
+    
+    deploy:
+      mode: replicated
+      replicas: 1
+      
+      labels:
+        # 启用 Traefik
+        - "traefik.enable=true"
+        
+        # 服务配置
+        - "traefik.http.services.dpanel.loadbalancer.server.port=8080"
+        
+        # 中间件 1: 安全头配置
+        - "traefik.http.middlewares.dpanel-security-headers.headers.frameDeny=true"
+        - "traefik.http.middlewares.dpanel-security-headers.headers.browserXssFilter=true"
+        - "traefik.http.middlewares.dpanel-security-headers.headers.contentTypeNosniff=true"
+        - "traefik.http.middlewares.dpanel-security-headers.headers.forceSTSHeader=true"
+        - "traefik.http.middlewares.dpanel-security-headers.headers.stsSeconds=31536000"
+        - "traefik.http.middlewares.dpanel-security-headers.headers.stsIncludeSubdomains=true"
+        - "traefik.http.middlewares.dpanel-security-headers.headers.stsPreload=true"
+        - "traefik.http.middlewares.dpanel-security-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+        - "traefik.http.middlewares.dpanel-security-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
+        - "traefik.http.middlewares.dpanel-security-headers.headers.customRequestHeaders.X-Forwarded-Proto=https"
+        
+        # 中间件 2: 压缩配置
+        - "traefik.http.middlewares.dpanel-compression.compress=true"
+        
+        # 中间件 3: 速率限制配置（管理面板，适度限制）
+        - "traefik.http.middlewares.dpanel-ratelimit.ratelimit.average=100"
+        - "traefik.http.middlewares.dpanel-ratelimit.ratelimit.burst=50"
+        - "traefik.http.middlewares.dpanel-ratelimit.ratelimit.period=1m"
+        
+        # 中间件链：组合所有中间件
+        - "traefik.http.middlewares.dpanel-chain.chain.middlewares=dpanel-security-headers,dpanel-compression,dpanel-ratelimit"
+        
+        # HTTP 路由配置
+        - "traefik.http.routers.dpanel.rule=Host(`dpanel.tomhanfriends.com`)"
+        - "traefik.http.routers.dpanel.entrypoints=websecure"
+        - "traefik.http.routers.dpanel.tls=true"
+        - "traefik.http.routers.dpanel.tls.certresolver=tencentcloud"
+        - "traefik.http.routers.dpanel.service=dpanel"
+        - "traefik.http.routers.dpanel.middlewares=dpanel-chain"
+      
+      # 节点放置约束 - 仅在 manager 节点上部署
+      placement:
+        constraints:
+          - node.role == manager
+        max_replicas_per_node: 1
+      
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 60s
+        order: start-first
+      
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: pause
+        order: start-first
+
+networks:
+  tomhanfriends:
+    external: true
+  shujuren:
+    external: true  # shujuren stack 的网络
+  zhaozhaotu:
+    external: true  # zhaozhaotu stack 的网络
+  dataops:
+    external: true  # dataops stack 的网络
+  iconsultant:
+    external: true

@@ -1,0 +1,153 @@
+version: "3.8"
+
+# ============================================================
+# 动态图谱洞察沙盘 POC - Docker Swarm 部署配置
+# 域名: poc-palantir.tomhanfriends.com
+# ============================================================
+# 部署步骤：
+#   1. 在 manager 节点拉取代码：git clone / git pull
+#   2. 构建镜像：
+#      docker build -t palantir-poc-backend:latest ./backend
+#      docker build -t palantir-poc-frontend:latest ./frontend
+#   3. 部署到 Swarm：
+#      docker stack deploy -c docker-compose.swarm.yml palantir
+#   4. 查看状态：
+#      docker stack services palantir
+#      docker stack ps palantir
+# ============================================================
+
+services:
+  # ----------------------------------------------------------
+  # 后端服务 - FastAPI + NetworkX 图计算引擎
+  # ----------------------------------------------------------
+  backend:
+    image: palantir-poc-backend:latest
+
+    deploy:
+      mode: replicated
+      replicas: 1
+
+      labels:
+        - "traefik.enable=false"  # 后端不直接暴露，由前端 Nginx 反向代理
+
+      placement:
+        constraints:
+          - node.role == manager
+
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
+
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+        order: start-first
+
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: pause
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    networks:
+      - palantir-internal  # 仅内网，不暴露给 Traefik
+
+  # ----------------------------------------------------------
+  # 前端服务 - Nginx 静态托管 + API 反向代理
+  # Nginx 内部将 /api/ /health /docs 代理到 backend:8000
+  # ----------------------------------------------------------
+  frontend:
+    image: palantir-poc-frontend:latest
+
+    deploy:
+      mode: replicated
+      replicas: 1
+
+      labels:
+        # 启用 Traefik
+        - "traefik.enable=true"
+
+        # 路由配置
+        - "traefik.http.routers.palantir-poc.rule=Host(`poc-palantir.tomhanfriends.com`)"
+        - "traefik.http.routers.palantir-poc.entrypoints=websecure"
+        - "traefik.http.routers.palantir-poc.tls=true"
+        - "traefik.http.routers.palantir-poc.tls.certresolver=tencentcloud"
+
+        # 应用安全链中间件（安全头 + 压缩 + 速率限制）
+        - "traefik.http.routers.palantir-poc.middlewares=secured@swarm"
+
+        # 服务端口配置（Nginx 监听 80）
+        - "traefik.http.services.palantir-poc.loadbalancer.server.port=80"
+
+        # 健康检查（Nginx 反代 /health → backend:8000/health，验证全链路）
+        - "traefik.http.services.palantir-poc.loadbalancer.healthcheck.path=/health"
+        - "traefik.http.services.palantir-poc.loadbalancer.healthcheck.interval=30s"
+        - "traefik.http.services.palantir-poc.loadbalancer.healthcheck.timeout=5s"
+        - "traefik.http.services.palantir-poc.loadbalancer.healthcheck.scheme=http"
+
+        # PassHostHeader
+        - "traefik.http.services.palantir-poc.loadbalancer.passhostheader=true"
+
+      placement:
+        constraints:
+          - node.role == manager
+
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+        reservations:
+          memory: 128M
+          cpus: "0.1"
+
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+        order: start-first
+
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: pause
+
+    networks:
+      - tomhanfriends      # Traefik 路由网络（外部流量入口）
+      - palantir-internal   # 与后端通信（Nginx → backend:8000）
+
+# ----------------------------------------------------------
+# 网络配置
+# ----------------------------------------------------------
+networks:
+  # Traefik 共享网络（已存在）
+  tomhanfriends:
+    external: true
+
+  # 前后端内部通信网络（Stack 部署时自动创建）
+  palantir-internal:
+    driver: overlay

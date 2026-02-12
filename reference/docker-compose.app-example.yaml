@@ -1,0 +1,152 @@
+version: "3.8"
+
+# 这是一个示例应用配置文件，展示如何配置支持 Sticky Session 的多副本服务
+# 使用方式：
+# 1. 复制此文件并重命名为你的应用名称，例如: docker-compose.myapp.yaml
+# 2. 修改服务名称、镜像、域名等配置
+# 3. 使用 docker stack deploy -c docker-compose.app-example.yaml your-app-stack 部署
+
+services:
+  # 示例应用服务 - 需要 Sticky Session 的多副本服务
+  example-app:
+    image: your-app-image:latest  # 替换为你的应用镜像
+    
+    # Docker Swarm 部署配置 - 标签必须在 deploy.labels 下
+    deploy:
+      mode: replicated
+      replicas: 3  # ⭐ 部署 3 个副本 ⭐
+      
+      # Traefik 标签配置 - Swarm 模式下必须在这里定义
+      labels:
+        - "traefik.enable=true"
+        
+        # 基本路由配置
+        - "traefik.http.routers.example-app.rule=Host(`app.tomhanfriends.com`)"  # 替换为你的域名
+        - "traefik.http.routers.example-app.entrypoints=websecure"
+        - "traefik.http.routers.example-app.tls=true"
+        - "traefik.http.routers.example-app.tls.certresolver=tencentcloud"
+        
+        # ⭐ 应用安全链中间件 ⭐
+        # 使用 Traefik 服务中定义的 secured 中间件（安全头+压缩+速率限制）
+        - "traefik.http.routers.example-app.middlewares=secured@swarm"
+        
+        # 服务端口配置（替换为你的应用端口）
+        - "traefik.http.services.example-app.loadbalancer.server.port=8080"
+        
+        # ⭐⭐⭐ 关键：Sticky Session 配置 ⭐⭐⭐
+        # Sticky Session 是负载均衡器特性，不是中间件！
+        # 使用 Cookie 实现会话粘性，确保用户请求始终路由到同一个副本
+        - "traefik.http.services.example-app.loadbalancer.sticky.cookie=true"
+        - "traefik.http.services.example-app.loadbalancer.sticky.cookie.name=app_session"
+        - "traefik.http.services.example-app.loadbalancer.sticky.cookie.secure=true"
+        - "traefik.http.services.example-app.loadbalancer.sticky.cookie.httpOnly=true"
+        - "traefik.http.services.example-app.loadbalancer.sticky.cookie.sameSite=lax"
+        
+        # 健康检查配置（可选，根据应用实际情况配置）
+        - "traefik.http.services.example-app.loadbalancer.healthcheck.path=/health"
+        - "traefik.http.services.example-app.loadbalancer.healthcheck.interval=30s"
+        - "traefik.http.services.example-app.loadbalancer.healthcheck.timeout=5s"
+        - "traefik.http.services.example-app.loadbalancer.healthcheck.scheme=http"
+        
+        # 负载均衡配置
+        - "traefik.http.services.example-app.loadbalancer.passhostheader=true"
+    
+      # 资源限制
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+        reservations:
+          memory: 256M
+          cpus: "0.25"
+      
+      # 放置约束
+      placement:
+        constraints:
+          - node.role == manager  # 部署到 manager 节点
+        preferences:
+          - spread: node.id  # 尽可能分散到不同节点
+        max_replicas_per_node: 1
+      
+      # 重启策略
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      
+      # 更新配置
+      update_config:
+        parallelism: 1  # 每次更新一个副本
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+        max_failure_ratio: 0.3
+        order: start-first  # 先启动新副本再停止旧副本
+      
+      # 回滚配置
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        failure_action: pause
+        monitor: 30s
+    
+    # 环境变量（根据应用需求配置）
+    environment:
+      - NODE_ENV=production
+      # - DATABASE_URL=${DATABASE_URL}
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]  # 替换为实际健康检查路径
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    
+    # 网络配置
+    networks:
+      - tomhanfriends
+
+  # 示例：有状态服务（不需要多副本，不需要 Sticky Session）
+  example-database:
+    image: postgres:16-alpine
+    
+    labels:
+      - "traefik.enable=false"  # 数据库不需要通过 Traefik 暴露
+    
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=app
+      - POSTGRES_DB=appdb
+    
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    
+    deploy:
+      mode: replicated
+      replicas: 1  # 数据库只需要 1 个副本
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+    
+    networks:
+      - tomhanfriends
+
+networks:
+  tomhanfriends:
+    external: true
+
+# Volumes 配置 - 使用已挂载的 NFS 路径
+# 注意：需要在所有 Manager 节点上先挂载 NFS 到 /mnt/cfs/
+volumes:
+  # 数据库持久化存储（使用已挂载的 NFS 路径）
+  postgres-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "/mnt/cfs/postgres-data"  # 替换为实际的挂载路径
+
