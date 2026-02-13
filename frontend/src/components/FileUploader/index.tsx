@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Upload,
   Select,
   Button,
   message,
@@ -11,18 +10,17 @@ import {
   Alert,
 } from 'antd';
 import {
-  InboxOutlined,
   CloudUploadOutlined,
   PythonOutlined,
   FileTextOutlined,
   DeleteOutlined,
+  FileAddOutlined,
+  SendOutlined,
 } from '@ant-design/icons';
 import { loadWorkspace, getSamples } from '../../services/api';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import type { SampleInfo } from '../../types';
-import type { UploadFile } from 'antd/es/upload/interface';
 
-const { Dragger } = Upload;
 const { Text } = Typography;
 
 export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
@@ -32,8 +30,12 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
   const [selectedSample, setSelectedSample] = useState<string | undefined>(
     undefined,
   );
+  const [jsonFile, setJsonFile] = useState<File | null>(null);
   const [pythonFile, setPythonFile] = useState<File | null>(null);
   const [lastWarnings, setLastWarnings] = useState<string[]>([]);
+
+  const jsonInputRef = useRef<HTMLInputElement>(null);
+  const pyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getSamples()
@@ -43,6 +45,7 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
       });
   }, []);
 
+  // ---- Core load function ----
   const handleLoad = useCallback(
     async (fileOrSample: File | string, actionFile?: File) => {
       setLoading(true);
@@ -60,7 +63,7 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
             registeredFunctions: resp.registered_functions || [],
           },
         });
-        // Show warnings if any
+
         if (resp.warnings && resp.warnings.length > 0) {
           setLastWarnings(resp.warnings);
           message.warning(
@@ -69,7 +72,7 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
         } else {
           message.success('工作区加载成功');
         }
-        // Show registered functions info
+
         if (resp.registered_functions && resp.registered_functions.length > 0) {
           const customCount = resp.registered_functions.filter(
             (f) => f.source === 'custom',
@@ -80,8 +83,13 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
             );
           }
         }
+
+        // Clear file selections after successful load
+        setJsonFile(null);
+        setPythonFile(null);
         onSuccess?.();
       } catch (err: unknown) {
+        console.error('[FileUploader] Load failed:', err);
         let msg = '加载失败，请检查文件格式';
         if (err && typeof err === 'object' && 'response' in err) {
           const axiosErr = err as {
@@ -109,61 +117,156 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
     [dispatch, onSuccess],
   );
 
-  const handleJsonUpload = useCallback(
-    (file: UploadFile) => {
-      if (file.originFileObj) {
-        handleLoad(file.originFileObj, pythonFile || undefined);
+  // ---- Native file input handlers (bypassing Antd Upload) ----
+  const handleJsonFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        setJsonFile(file);
+        setSelectedSample(undefined); // Clear sample selection
       }
-      return false;
-    },
-    [handleLoad, pythonFile],
-  );
-
-  const handlePythonUpload = useCallback(
-    (file: UploadFile) => {
-      if (file.originFileObj) {
-        setPythonFile(file.originFileObj);
-        message.info(
-          `Python 动作文件 "${file.name}" 已准备就绪，上传 JSON 时将一并提交`,
-        );
-      }
-      return false;
+      // Reset input so the same file can be re-selected
+      e.target.value = '';
     },
     [],
   );
 
-  const handleRemovePythonFile = useCallback(() => {
-    setPythonFile(null);
-    message.info('已移除 Python 动作文件');
-  }, []);
+  const handlePythonFileChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        setPythonFile(file);
+        message.info(`Python 动作文件 "${file.name}" 已选择`);
+      }
+      e.target.value = '';
+    },
+    [],
+  );
 
+  // ---- Upload button click ----
+  const handleUploadClick = useCallback(() => {
+    if (jsonFile) {
+      handleLoad(jsonFile, pythonFile || undefined);
+    }
+  }, [jsonFile, pythonFile, handleLoad]);
+
+  // ---- Sample selection ----
   const handleSampleChange = useCallback(
     (value: string) => {
       setSelectedSample(value);
-      setPythonFile(null); // Clear Python file when using sample
+      setJsonFile(null); // Clear file selection when using sample
+      setPythonFile(null);
       handleLoad(value);
     },
     [handleLoad],
   );
 
+  // ---- Remove file handlers ----
+  const handleRemoveJson = useCallback(() => {
+    setJsonFile(null);
+  }, []);
+
+  const handleRemovePython = useCallback(() => {
+    setPythonFile(null);
+  }, []);
+
+  // ---- Drop zone handler ----
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const files = Array.from(e.dataTransfer.files);
+      for (const file of files) {
+        if (file.name.endsWith('.json')) {
+          setJsonFile(file);
+          setSelectedSample(undefined);
+        } else if (file.name.endsWith('.py')) {
+          setPythonFile(file);
+          message.info(`Python 动作文件 "${file.name}" 已选择`);
+        }
+      }
+    },
+    [],
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
   return (
     <Space direction="vertical" style={{ width: '100%' }} size="middle">
-      {/* JSON File Upload */}
-      <Dragger
+      {/* Hidden native file inputs */}
+      <input
+        ref={jsonInputRef}
+        type="file"
         accept=".json"
-        showUploadList={false}
-        beforeUpload={() => false}
-        onChange={({ file }) => handleJsonUpload(file)}
-        disabled={loading}
-      >
-        <p className="ant-upload-drag-icon">
-          <InboxOutlined />
-        </p>
-        <p className="ant-upload-text">拖拽 JSON 配置文件到此处上传</p>
-        <p className="ant-upload-hint">支持自定义知识图谱 JSON 配置文件</p>
-      </Dragger>
+        style={{ display: 'none' }}
+        onChange={handleJsonFileChange}
+      />
+      <input
+        ref={pyInputRef}
+        type="file"
+        accept=".py"
+        style={{ display: 'none' }}
+        onChange={handlePythonFileChange}
+      />
 
-      {/* Python Action File Upload */}
+      {/* Drop zone + file selection area */}
+      <div
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        style={{
+          border: '2px dashed #d9d9d9',
+          borderRadius: 8,
+          padding: '20px 16px',
+          textAlign: 'center',
+          background: jsonFile ? '#f0f5ff' : '#fafafa',
+          cursor: 'pointer',
+          transition: 'all 0.3s',
+        }}
+        onClick={() => !jsonFile && jsonInputRef.current?.click()}
+      >
+        {jsonFile ? (
+          <Space direction="vertical" size="small">
+            <Tag
+              icon={<FileTextOutlined />}
+              color="blue"
+              closable
+              onClose={handleRemoveJson}
+              style={{ fontSize: 14, padding: '4px 12px' }}
+            >
+              {jsonFile.name}{' '}
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                ({(jsonFile.size / 1024).toFixed(1)} KB)
+              </Text>
+            </Tag>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              JSON 配置文件已选择，点击下方按钮加载
+            </Text>
+          </Space>
+        ) : (
+          <>
+            <p style={{ marginBottom: 8 }}>
+              <FileAddOutlined style={{ fontSize: 32, color: '#1890ff' }} />
+            </p>
+            <p style={{ margin: 0, fontWeight: 500 }}>
+              点击选择或拖拽 JSON 配置文件
+            </p>
+            <p
+              style={{
+                margin: '4px 0 0 0',
+                fontSize: 12,
+                color: '#999',
+              }}
+            >
+              支持 .json 和 .py 文件拖拽（自动识别类型）
+            </p>
+          </>
+        )}
+      </div>
+
+      {/* Python file section */}
       <div
         style={{
           border: '1px dashed #d9d9d9',
@@ -181,8 +284,7 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
             </Text>
           </Space>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            上传包含 @register_action 装饰器函数的 .py
-            文件，为图谱配置自定义动作逻辑
+            上传包含 @register_action 装饰器函数的 .py 文件
           </Text>
           {pythonFile ? (
             <Space>
@@ -194,26 +296,37 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
                 size="small"
                 danger
                 icon={<DeleteOutlined />}
-                onClick={handleRemovePythonFile}
+                onClick={handleRemovePython}
               >
                 移除
               </Button>
             </Space>
           ) : (
-            <Upload
-              accept=".py"
-              showUploadList={false}
-              beforeUpload={() => false}
-              onChange={({ file }) => handlePythonUpload(file)}
+            <Button
+              size="small"
+              icon={<CloudUploadOutlined />}
+              onClick={() => pyInputRef.current?.click()}
               disabled={loading}
             >
-              <Button size="small" icon={<CloudUploadOutlined />}>
-                选择 .py 文件
-              </Button>
-            </Upload>
+              选择 .py 文件
+            </Button>
           )}
         </Space>
       </div>
+
+      {/* Upload/Load button */}
+      {jsonFile && (
+        <Button
+          type="primary"
+          icon={<SendOutlined />}
+          onClick={handleUploadClick}
+          loading={loading}
+          block
+          size="large"
+        >
+          {loading ? '加载中...' : '上传并加载图谱'}
+        </Button>
+      )}
 
       {/* Warnings display */}
       {lastWarnings.length > 0 && (
@@ -251,11 +364,13 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
         }))}
       />
 
-      {loading && (
-        <Button type="primary" loading block icon={<CloudUploadOutlined />}>
-          加载中...
-        </Button>
-      )}
+      <Alert
+        type="info"
+        showIcon
+        style={{ fontSize: 12 }}
+        message="使用说明"
+        description="上传的文件直接加载到当前会话，不会出现在内置示例下拉框中。下拉框仅显示服务器预置的示例场景。"
+      />
     </Space>
   );
 }
