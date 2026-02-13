@@ -128,7 +128,7 @@ docker-compose down
 ### 使用流程
 
 1. 浏览器访问 http://localhost:5173
-2. 从下拉选择器选择内置示例 `corporate_acquisition`，或拖拽上传自定义 JSON
+2. 从下拉选择器选择内置示例 `private_banking`，或拖拽上传自定义 JSON（可同时上传配套 Python 动作文件）
 3. 点击图谱节点查看属性，选中 Event 节点后点击动作按钮执行 What-If 模拟
 4. 观察涟漪传导动画和右侧结构化情报洞察
 
@@ -161,8 +161,9 @@ palantir-poc/
 │   │       ├── workspace.py       # Metadata, WorkspaceConfig
 │   │       └── api.py             # SimulateRequest/Response, InsightItem
 │   ├── samples/
-│   │   └── corporate_acquisition.json  # 内置示例：收购事件风险传导
-│   └── tests/                 # pytest 测试套件 (174+ 测试)
+│   │   ├── private_banking.json  # 内置示例：私行高净值客户经营沙盘
+│   │   └── private_banking.py    # 私行领域自定义 Action 函数
+│   └── tests/                 # pytest 测试套件
 ├── frontend/
 │   ├── README.md              # 前端文档
 │   ├── Dockerfile             # 前端容器镜像 (多阶段构建)
@@ -205,6 +206,11 @@ palantir-poc/
 - **涟漪传导 (Ripple)**: 按 DSL 路径 (如 `<-[EDGE_TYPE]- NodeType`) 沿图拓扑传播影响
 - **三层智能**: L1 数据层 (属性更新) → L2 信息层 (计算推导) → L3 智能层 (图拓扑分析)
 - **结构化洞察 (Insight)**: 每次推演生成多类型、多严重度的情报条目
+
+## 文档
+
+- [开发者指南](docs/DEVELOPER.md) — 项目结构、技术栈、环境搭建、本地运行
+- [使用者指南](docs/USER_GUIDE.md) — JSON/Python 编写规范、上传操作、推演使用
 
 ## License
 

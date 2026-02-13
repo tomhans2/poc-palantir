@@ -7,9 +7,14 @@ const api = axios.create({
 
 /**
  * Load workspace from file upload or built-in sample name.
+ *
+ * Accepts either:
+ * - A built-in sample name (string)
+ * - A JSON config file, optionally paired with a Python action file
  */
 export async function loadWorkspace(
   fileOrSample: File | string,
+  actionFile?: File,
 ): Promise<LoadResponse> {
   if (typeof fileOrSample === 'string') {
     // Load built-in sample by name
@@ -18,9 +23,12 @@ export async function loadWorkspace(
     });
     return data;
   }
-  // File upload
+  // File upload — JSON config + optional Python action file
   const formData = new FormData();
   formData.append('file', fileOrSample);
+  if (actionFile) {
+    formData.append('action_file', actionFile);
+  }
   const { data } = await api.post<LoadResponse>('/load', formData);
   return data;
 }

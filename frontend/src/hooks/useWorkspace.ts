@@ -6,6 +6,7 @@ import type {
   Action,
   InsightItem,
   SimulateResponse,
+  RegisteredFunction,
 } from '../types';
 
 // ---- State ----
@@ -35,6 +36,8 @@ export interface WorkspaceState {
   isSimulating: boolean;
   simulationHistory: SimulationHistoryEntry[];
   pendingSimulation: PendingSimulation | null;
+  warnings: string[];
+  registeredFunctions: RegisteredFunction[];
 }
 
 export const initialState: WorkspaceState = {
@@ -48,6 +51,8 @@ export const initialState: WorkspaceState = {
   isSimulating: false,
   simulationHistory: [],
   pendingSimulation: null,
+  warnings: [],
+  registeredFunctions: [],
 };
 
 // ---- Actions ----
@@ -60,6 +65,8 @@ export type WorkspaceAction =
         ontologyDef: OntologyDef;
         graphData: GraphData;
         actions: Action[];
+        warnings?: string[];
+        registeredFunctions?: RegisteredFunction[];
       };
     }
   | {
@@ -100,6 +107,8 @@ export function workspaceReducer(
         ontologyDef: action.payload.ontologyDef,
         graphData: action.payload.graphData,
         actions: action.payload.actions,
+        warnings: action.payload.warnings ?? [],
+        registeredFunctions: action.payload.registeredFunctions ?? [],
       };
 
     case 'SELECT_NODE':

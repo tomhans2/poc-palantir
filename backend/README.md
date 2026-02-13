@@ -31,8 +31,8 @@ uvicorn app.main:app --reload --port 8000
 ```json
 [
   {
-    "name": "corporate_acquisition",
-    "description": "基于投资与收购事件的风险传导推演沙盘"
+    "name": "private_banking",
+    "description": "私行高净值客户经营：张远航家族财富管理沙盘"
   }
 ]
 ```
@@ -48,7 +48,7 @@ curl -X POST http://localhost:8000/api/v1/workspace/load \
 
 **方式二 — 内置示例 (query parameter)**:
 ```bash
-curl -X POST "http://localhost:8000/api/v1/workspace/load?sample=corporate_acquisition"
+curl -X POST "http://localhost:8000/api/v1/workspace/load?sample=private_banking"
 ```
 
 **可选参数**: `action_file` — 上传自定义 Python Action 函数文件。
@@ -61,8 +61,8 @@ curl -X POST "http://localhost:8000/api/v1/workspace/load?sample=corporate_acqui
 **请求体**:
 ```json
 {
-  "action_id": "trigger_acquisition_failure",
-  "node_id": "E_ACQ_101"
+  "action_id": "simulate_ipo_success",
+  "node_id": "EVT_IPO"
 }
 ```
 
@@ -157,6 +157,7 @@ backend/
 │   │   └── action_functions.py # 内置 L1/L2/L3 函数
 │   └── models/                # Pydantic 数据模型
 ├── samples/
-│   └── corporate_acquisition.json
-└── tests/                     # 174+ 测试
+│   ├── private_banking.json       # 内置示例：私行高净值客户经营沙盘
+│   └── private_banking.py         # 私行领域自定义 Action 函数
+└── tests/
 ```
