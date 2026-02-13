@@ -91,8 +91,8 @@ export function FileUploader({ onSuccess }: { onSuccess?: () => void } = {}) {
           if (typeof detail === 'string') {
             msg = detail;
           } else if (Array.isArray(detail)) {
-            msg = detail
-              .map((d: { msg?: string; loc?: string[] }) => {
+            msg = (detail as { msg?: string; loc?: string[] }[])
+              .map((d) => {
                 const loc = d.loc?.join('.') || '';
                 return `${loc}: ${d.msg || ''}`;
               })
